@@ -2,37 +2,33 @@ import type { ReactNode } from "react";
 import SuperAdminSidebar from "@/shared/layout/super-admin-sidebar";
 import Header from "@/shared/layout/header";
 import { Metadata } from "next";
-import ActivityPanel from "@/shared/layout/activity-panel";
+import { ActivityPanelProvider } from "@/shared/layout/activity-panel-context";
 
 export const metadata: Metadata = {
   title: "IDIYANALE",
   description: "IDIYANALE Staff Portal",
 };
 
-export default function superAdminLayout({
+export default function SuperAdminLayout({
   children,
 }: {
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <SuperAdminSidebar />
+    <ActivityPanelProvider>
+      <div className="min-h-screen bg-gray-50">
+        {/* Sidebar */}
+        <SuperAdminSidebar />
 
-       {/* Right-side Activity panel */}
-            <ActivityPanel />
+        {/* Main Content */}
+        <div className="ml-20">
+          {/* Header */}
+          <Header />
 
-      {/* Main Content */}
-      <div className="ml-20">
-        {/* Header */}
-        <Header />
-
-        {/* Page */}
-        <main className="p-6">
-          {children}
-        </main>
+          {/* Page */}
+          <main className="p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </ActivityPanelProvider>
   );
 }
- 

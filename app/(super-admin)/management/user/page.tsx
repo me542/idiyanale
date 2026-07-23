@@ -1,73 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { getAllUsers, type UserDetailsResp } from "./api/get-user";
 
-/**
- * ---------------------------------------------------------------------------
- * API WIRING
- * ---------------------------------------------------------------------------
- * This page expects a flat list of staff/user records, each tagged with which
- * institution they belong to. Point USERS_API_URL at your real endpoint when
- * it's ready — nothing else in this file needs to change as long as the
- * response matches (or is mapped to) the `ApiUserRecord` shape below.
- *
- * Expected response shape:
- * {
- *   "users": [
- *     {
- *       "institutionId": "bakawan",
- *       "institutionName": "BAKAWAN Data Analytics, Inc.",
- *       "institutionColor": "#1AAE6F",
- *       "staffId": "202512-57725",
- *       "firstName": "Reyvin",
- *       "lastName": "Flor",
- *       "username": "reyvin.flor",
- *       "number": "094124124",
- *       "email": "reyvin.flor@cardmri.com",
- *       "role": "insti-admin",
- *       "status": "active"
- *     }
- *   ]
- * }
- *
- * If your institutions list can be empty of staff (an institution exists but
- * has no users yet), also expose an `institutions` array in the response —
- * see `ApiInstitutionRecord` — so empty sections still render with their
- * title and columns. This is optional; the page works fine from `users`
- * alone too.
- * ---------------------------------------------------------------------------
- */
-
-const USERS_API_URL =
-  process.env.NEXT_PUBLIC_USERS_API_URL ?? "/api/users";
-
-type Role = "insti-admin" | "insti-staff" | "super-admin";
 type Status = "active" | "inactive";
-
-type ApiUserRecord = {
-  institutionId: string;
-  institutionName: string;
-  institutionColor?: string;
-  staffId: string;
-  firstName: string;
-  lastName: string;
-  username: string;
-  number: string;
-  email: string;
-  role: Role;
-  status: Status;
-};
-
-type ApiInstitutionRecord = {
-  id: string;
-  name: string;
-  color?: string;
-};
-
-type ApiResponse = {
-  institutions?: ApiInstitutionRecord[];
-  users: ApiUserRecord[];
-};
 
 type Staff = {
   id: string;
@@ -77,7 +13,7 @@ type Staff = {
   username: string;
   number: string;
   email: string;
-  role: Role;
+  roleName: string;
   status: Status;
 };
 
@@ -88,43 +24,38 @@ type InstitutionGroup = {
   staff: Staff[];
 };
 
-const ROLE_OPTIONS: Role[] = ["insti-admin", "insti-staff", "super-admin"];
 const FALLBACK_COLOR = "#3C4046";
 
-function groupByInstitution(data: ApiResponse): InstitutionGroup[] {
+function groupByInstitution(users: UserDetailsResp[]): InstitutionGroup[] {
   const groups = new Map<string, InstitutionGroup>();
 
-  // seed known institutions first so ones with zero staff still show up
-  for (const inst of data.institutions ?? []) {
-    groups.set(inst.id, {
-      id: inst.id,
-      name: inst.name,
-      color: inst.color ?? FALLBACK_COLOR,
-      staff: [],
-    });
-  }
+  for (const user of users) {
+    const institutionId = String(user.institution_id ?? "unassigned");
+    const institutionName = user.institution_name || "Unassigned";
 
-  for (const user of data.users) {
-    const existing = groups.get(user.institutionId);
     const staffRecord: Staff = {
-      id: `${user.institutionId}-${user.staffId}-${user.username}`,
-      staffId: user.staffId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      username: user.username,
-      number: user.number,
-      email: user.email,
-      role: user.role,
-      status: user.status,
+      id: String(user.id),
+      staffId: user.staff_id ?? "",
+      firstName: user.first_name ?? "",
+      lastName: user.last_name ?? "",
+      username: user.username ?? "",
+      number: user.phone_no ?? "",
+      email: user.email ?? "",
+      roleName: user.role?.role_name ?? "—",
+      status:
+  user.status?.toLowerCase() === "active"
+    ? "active"
+    : "inactive",
     };
 
+    const existing = groups.get(institutionId);
     if (existing) {
       existing.staff.push(staffRecord);
     } else {
-      groups.set(user.institutionId, {
-        id: user.institutionId,
-        name: user.institutionName,
-        color: user.institutionColor ?? FALLBACK_COLOR,
+      groups.set(institutionId, {
+        id: institutionId,
+        name: institutionName,
+        color: FALLBACK_COLOR,
         staff: [staffRecord],
       });
     }
@@ -133,46 +64,35 @@ function groupByInstitution(data: ApiResponse): InstitutionGroup[] {
   return Array.from(groups.values());
 }
 
-async function fetchUsers(): Promise<ApiResponse> {
-  const res = await fetch(USERS_API_URL, {
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Request failed with status ${res.status}`);
-  }
-
-  const data = (await res.json()) as ApiResponse;
-  return data;
-}
-
 export default function UserManagementPage() {
   const [groups, setGroups] = useState<InstitutionGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchUsers();
-      setGroups(groupByInstitution(data));
-    } catch (err) {
-      // The API isn't live yet in this environment — that's expected for now.
-      // Once NEXT_PUBLIC_USERS_API_URL / /api/users is wired up, real errors
-      // will surface here instead.
-      setError(
-        err instanceof Error ? err.message : "Failed to load user data."
-      );
-      setGroups([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  setLoading(true);
+  setError(null);
+
+  try {
+    // ApiHelper automatically attaches the token
+    const users = await getAllUsers();
+
+    setGroups(groupByInstitution(users));
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to load user data."
+    );
+    setGroups([]);
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   useEffect(() => {
-    //loadData();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData();
   }, [loadData]);
 
   function updateStaff(
@@ -192,8 +112,8 @@ export default function UserManagementPage() {
             }
       )
     );
-    // TODO: PATCH the change back to the API, e.g.
-    // fetch(`${USERS_API_URL}/${staffId}`, { method: "PATCH", body: JSON.stringify(patch) })
+    // TODO: PATCH the change back to the API once an update endpoint exists, e.g.
+    // await updateUserStatus(staffId, patch.status, token)
   }
 
   return (
@@ -227,7 +147,7 @@ export default function UserManagementPage() {
           </div>
         )}
 
-        {/* No data state — covers both "API not reachable yet" and "API responded with nothing" */}
+        {/* No data state — covers both "API not reachable" and "API responded with nothing" */}
         {!loading && (error || groups.length === 0) && (
           <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F1F2F4] text-[#9AA0A8]">
@@ -311,25 +231,8 @@ export default function UserManagementPage() {
                               {s.email}
                             </a>
                           </td>
-                          <td className="py-3">
-                            <div className="relative inline-block">
-                              <select
-                                value={s.role}
-                                onChange={(e) =>
-                                  updateStaff(group.id, s.id, {
-                                    role: e.target.value as Role,
-                                  })
-                                }
-                                className="appearance-none rounded-md bg-transparent pr-5 text-[14px] font-semibold text-[#111318] outline-none"
-                              >
-                                {ROLE_OPTIONS.map((r) => (
-                                  <option key={r} value={r}>
-                                    {r}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronIcon className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[#9AA0A8]" />
-                            </div>
+                          <td className="py-3 text-[14px] font-semibold text-[#111318]">
+                            {s.roleName}
                           </td>
                           <td className="py-3">
                             <div className="relative inline-block">

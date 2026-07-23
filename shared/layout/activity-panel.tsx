@@ -1,12 +1,24 @@
 "use client";
 import { useState } from "react";
-import { Plus, X, Ticket, ArrowLeft } from "lucide-react";
-import NewTicketPanelView, { NewTicketFormData } from "./create-ticket";
-import MinorTaskPanelView, { MinorTaskFormData } from "./create-minor-task";
+import {
+    Plus,
+    X,
+    ArrowLeft,
+    ClipboardList,
+    HandPlatter,
+    Bug,
+    MessageCircleWarning,
+    Wand,
+    Stone,
+} from "lucide-react";
+import NewTicketPanelView, { NewTicketFormData } from "./Activity/service-request";
+import MinorTaskPanelView, { MinorTaskFormData } from "./Activity/minor-task";
+import { useActivityPanel } from "./activity-panel-context";
 
 interface ActivityAction {
     id: string;
     label: string;
+    icon: React.ComponentType<{ size?: number; className?: string }>;
     disabled?: boolean;
     onClick?: () => void;
 }
@@ -16,8 +28,11 @@ interface ActivityPanelProps {
 }
 
 const DEFAULT_ACTIONS: ActivityAction[] = [
-    { id: "ticket", label: "Ticket" },
-    { id: "minor-task", label: "Minor Task" },
+    { id: "service-request", label: "Service Request", icon: HandPlatter },
+    { id: "changed-request", label: "Changed Request", icon: Wand },
+    { id: "incident-report", label: "Incident Report", icon: MessageCircleWarning },
+    { id: "problem-management", label: "Problem Management", icon: Bug },
+    { id: "minor-task", label: "Minor Task", icon: Stone },
 ];
 
 type PanelView = "menu" | "ticket" | "minor-task";
@@ -38,10 +53,9 @@ const PANEL_WIDTHS: Record<PanelView, string> = {
 export default function ActivityPanel({
     actions = DEFAULT_ACTIONS,
 }: ActivityPanelProps) {
-    const [isOpen, setIsOpen] = useState(false);
+    const { isOpen, view, openPanel, closePanel, setView } = useActivityPanel();
     const [isHovered, setIsHovered] = useState(false);
     const [selectedAction, setSelectedAction] = useState<string | null>(null);
-    const [view, setView] = useState<PanelView>("menu");
 
     // Ribbon shows its icon whenever it's expanded, either from hover or
     // because the panel itself is open.
@@ -53,11 +67,11 @@ export default function ActivityPanel({
 
         if (action.onClick) {
             action.onClick();
-        } else if (action.id === "ticket") {
-            setView("ticket");
         } else if (action.id === "minor-task") {
             setView("minor-task");
         }
+        // service-request, changed-request, incident-report, and
+        // problem-management have no wired behavior yet.
     };
 
     const handleBackToMenu = () => {
@@ -66,8 +80,7 @@ export default function ActivityPanel({
     };
 
     const handleClosePanel = () => {
-        setIsOpen(false);
-        setView("menu");
+        closePanel();
         setSelectedAction(null);
     };
 
@@ -99,24 +112,31 @@ export default function ActivityPanel({
                 Stays attached to the panel's left edge (visible) when open, instead of
                 sliding away, so it doubles as the close handle. Tracks the panel's
                 current width (narrow menu vs. wide ticket form). */}
-            <button
-                onClick={() => setIsOpen((prev) => !prev)}
-                onMouseEnter={() => setIsHovered(true)}
-                onMouseLeave={() => setIsHovered(false)}
-                aria-label={isOpen ? "Close activity panel" : "Open activity panel"}
+            {/* Ribbon trigger with invisible hover area */}
+            {/* Ribbon trigger with invisible hover area */}
+            <div
+                className="fixed top-1/2 z-50 h-20 w-24 -translate-y-1/2"
                 style={{ right: isOpen ? panelWidth : 0 }}
-                className={`fixed top-50 -translate-y-1/2 z-50 bg-[#1E4637]
-                    flex items-center justify-center rounded-l-xl shadow-lg
-                    transition-[width,right] duration-300 ease-in-out overflow-hidden
-                    ${isExpanded ? "w-14 h-16" : "w-5 h-16"}`}
             >
-                <Ticket
-                    size={20}
-                    className={`text-white shrink-0 transition-opacity duration-200 ${
-                        isExpanded ? "opacity-100" : "opacity-0"
-                    }`}
-                />
-            </button>
+                <button
+                    onClick={() => (isOpen ? handleClosePanel() : openPanel())}
+                    onMouseEnter={() => setIsHovered(true)}
+                    onMouseLeave={() => setIsHovered(false)}
+                    aria-label={isOpen ? "Close activity panel" : "Open activity panel"}
+                    className={`absolute right-0 -top-60 -translate-y-1/2
+                        bg-[#1E4637]
+                        flex items-center justify-center rounded-l-xl shadow-lg
+                        transition-all duration-300 ease-in-out overflow-hidden
+                        ${isExpanded ? "w-14 h-16" : "w-8 h-16"}`}
+                >
+                    <ClipboardList
+                        size={20}
+                        className={`text-white shrink-0 transition-opacity duration-200 ${
+                            isExpanded ? "opacity-100" : "opacity-0"
+                        }`}
+                    />
+                </button>
+            </div>
 
             {/* Sliding panel — width animates between the narrow menu/minor-task
                 views and the wide two-column ticket form. */}
@@ -157,23 +177,34 @@ export default function ActivityPanel({
                 {/* Content */}
                 {view === "menu" && (
                     <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8">
-                        {actions.map((action) => (
-                            <button
-                                key={action.id}
-                                onClick={() => handleActionClick(action)}
-                                className={`w-full max-w-xs py-4 rounded-2xl font-bold text-sm tracking-wide
-                                    transition-colors shadow-sm
-                                    ${
-                                        action.disabled
-                                            ? "bg-gray-100 text-gray-300 cursor-not-allowed"
-                                            : selectedAction === action.id
-                                            ? "bg-[#1E4637] text-white"
-                                            : "bg-gray-300 text-gray-700 hover:bg-gray-200"
+                        {actions.map((action, index) => {
+                            const Icon = action.icon;
+                            const isLast = index === actions.length - 1;
+                            return (
+                                <div
+                                    key={action.id}
+                                    className={`w-full max-w-xs flex flex-col items-center ${
+                                        isLast ? "mt-6 pt-6 border-t border-gray-200" : ""
                                     }`}
-                            >
-                                {action.label.toUpperCase()}
-                            </button>
-                        ))}
+                                >
+                                    <button
+                                        onClick={() => handleActionClick(action)}
+                                        className={`w-full py-4 px-5 rounded-2xl font-bold text-sm tracking-wide
+                                            transition-colors shadow-lg flex items-center gap-3
+                                            ${
+                                                action.disabled
+                                                    ? "bg-gray-100 text-[#1E4637] cursor-not-allowed"
+                                                    : selectedAction === action.id
+                                                    ? "bg-[#1E4637] text-white"
+                                                    : "bg-white/80 text-[#1E4637] hover:bg-[#1E4637] hover:text-white"
+                                            }`}
+                                    >
+                                        <Icon size={18} className="shrink-0" />
+                                        <span>{action.label.toUpperCase()}</span>
+                                    </button>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 

@@ -1,4 +1,5 @@
 "use client";
+
 import { StatusCounts } from "./types";
 
 interface Props {
@@ -27,17 +28,18 @@ export default function StatusTickets({ data }: Props) {
   ];
 
   return (
-    <div className="flex flex-wrap gap-4 mb-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
       {items.map((item) => (
         <div
           key={item.label}
-          className="bg-white rounded-xl shadow-md min-w-[210px] px-5 pt-[14px] pb-[22px] border border-slate-200"
+          className="bg-white rounded-xl shadow-md border border-slate-200 px-5 pt-[14px] pb-[22px] w-full"
           style={{ borderTop: `4px solid ${item.color}` }}
         >
-          <div className="text-[12px] font-bold tracking-wide uppercase text-slate-700">
+          <div className="text-[12px] font-bold uppercase tracking-wide text-slate-700">
             {item.label}
           </div>
-          <div className="text-[34px] font-extrabold text-slate-900 mt-2.5">
+
+          <div className="mt-2 text-[34px] font-extrabold text-slate-900">
             {item.value}
           </div>
         </div>

@@ -16,7 +16,6 @@ export default function DateTable({ rows = [] }: DateTableProps) {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-md">
-      {/* <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-md"> */}
       <table className="w-full border-separate border-spacing-y-2 text-left text-sm">
         <thead>
           <tr className="text-slate-400">

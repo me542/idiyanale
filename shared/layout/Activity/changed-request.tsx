@@ -162,7 +162,7 @@ export default function NewTicketPanelView({ onCancel, onSubmit }: NewTicketPane
                         options={["Manager", "Team Lead"]}
                     />
                     <SelectField
-                        label="Approver Pool"
+                        label="Approver"
                         value={form.approverPool}
                         onChange={updateField("approverPool")}
                         options={["Pool A", "Pool B"]}

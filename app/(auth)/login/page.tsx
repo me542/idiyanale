@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import { loginOTP } from "@/services/integration/auth/login";
 import { verifyOTP } from "@/services/integration/auth/VerifyOtp";
 import {
@@ -10,13 +11,13 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Page = "login" | "verification";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const BRAND_GREEN = "#1B5E3B";
-const BRAND_GOLD = "#C9A84C";
 const CODE_LENGTH = 6;
 const COUNTDOWN_SECONDS = 300; // 5:00
 
@@ -75,14 +76,12 @@ function BrandPanel() {
         padding: "40px",
       }}
     >
-      <img
+      <Image
         src="/images/idiyanale.png"
-        alt="IDIYANALE"
-        style={{
-          width: 180,
-          height: 180,
-          objectFit: "contain",
-        }}
+        alt="Idiyanale"
+        width={180}
+        height={180}
+        loading="eager"
       />
 
       <p
@@ -263,11 +262,31 @@ function LoginPage({
             )}
             </>
         </button>
-
-        <p style={{ marginTop: 24, fontSize: 11, color: "#9CA3AF", textAlign: "right" }}>
+        
+        <div style={{ marginTop: 16, textAlign: "right" }}>
+          <Link
+            href="/register"
+            style={{
+              fontSize: 13,
+              color: BRAND_GREEN,
+              fontWeight: 600,
+              textDecoration: "none",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.textDecoration = "underline";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.textDecoration = "none";
+            }}
+          >
+            Register
+          </Link>
+        </div>
+      </div>
+      <p style={{ marginTop: 24, fontSize: 11, color: "#9CA3AF", textAlign: "right" }}>
           © 2026 IDIYANALE · idiyanale.admin@gmail.com
         </p>
-      </div>
     </Card>
   );
 }

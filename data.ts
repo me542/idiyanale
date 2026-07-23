@@ -28,7 +28,7 @@ export const SIDEBAR_MENU = [
 		icon: ListTodo,
 		children: [
 			{ label: "Dashboard", path: "/minor-task/dashboard" },
-			{ label: "All Tickets", path: "/minor-task/all-task" },
+			{ label: "All Tasks", path: "/minor-task/all-tasks" },
 			{ label: "Reports", path: "/minor-task/reports" },
 		],
 	},
@@ -41,12 +41,13 @@ export const SIDEBAR_MENU = [
 	},
 
 	{
-		id: "setting",
-		label: "Setting",
+		id: "settings",
+		label: "Settings",
 		icon: Bolt,
 		children: [
-			{ label: "User", path: "/setting/user" },
+			{ label: "Profile", path: "/setting/profile" },
 			{ label: "Template", path: "/setting/template" },
+			{ label: "User Management", path: "/setting/user-management" },
 			{ label: "Top", path: "/setting/top" },
 		],
 	},
