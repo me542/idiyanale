@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode } from "react";
 
-export type PanelView = "menu" | "ticket" | "minor-task";
+export type PanelView = "menu" | "service-request" | "changed-request" | "incident-report" | "problem-management" | "minor-task";
 
 interface ActivityPanelContextValue {
   isOpen: boolean;

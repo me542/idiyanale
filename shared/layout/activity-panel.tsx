@@ -35,19 +35,25 @@ const DEFAULT_ACTIONS: ActivityAction[] = [
     { id: "minor-task", label: "Minor Task", icon: Stone },
 ];
 
-type PanelView = "menu" | "ticket" | "minor-task";
+type PanelView = "menu" | "service-request" | "changed-request" | "incident-report" | "problem-management" | "minor-task";
 
 const PANEL_TITLES: Record<PanelView, string> = {
     menu: "ACTIVITY",
-    ticket: "NEW TICKET",
+    "service-request": "SERVICE-REQUEST",
     "minor-task": "MINOR TASK",
+    "changed-request": "CHANGED-REQUEST",
+    "incident-report": "INCIDENT-REPORT",
+    "problem-management": "PROBLEM-MANAGEMENT"
 };
 
 // Narrow menu vs. wider single-column minor-task vs. wide two-column ticket form.
 const PANEL_WIDTHS: Record<PanelView, string> = {
     menu: "24rem",
-    ticket: "56rem",
+    "service-request": "56rem",
     "minor-task": "32rem",
+    "changed-request": "56rem",
+    "incident-report": "56rem",
+    "problem-management": "56rem"
 };
 
 export default function ActivityPanel({
@@ -69,9 +75,16 @@ export default function ActivityPanel({
             action.onClick();
         } else if (action.id === "minor-task") {
             setView("minor-task");
+        } else if (
+            action.id === "service-request" ||
+            action.id === "changed-request" ||
+            action.id === "incident-report" ||
+            action.id === "problem-management"
+        ) {
+            // All request-type actions currently open the ticket form until a
+            // dedicated flow is wired up for each variant.
+            setView("service-request");
         }
-        // service-request, changed-request, incident-report, and
-        // problem-management have no wired behavior yet.
     };
 
     const handleBackToMenu = () => {
@@ -208,7 +221,7 @@ export default function ActivityPanel({
                     </div>
                 )}
 
-                {view === "ticket" && (
+                {view === "service-request" && (
                     <NewTicketPanelView
                         onCancel={handleBackToMenu}
                         onSubmit={handleTicketSubmit}
