@@ -113,7 +113,12 @@ async function handleResponse<T>(
     );
   }
 
-  if (!response.ok) {
+    if (!response.ok) {
+    console.error("Request failed:", {
+      url: response.url,
+      status: response.status,
+      data,
+    });
     throw new Error(
       data?.message ??
         data?.error ??

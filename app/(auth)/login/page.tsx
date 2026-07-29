@@ -365,39 +365,39 @@ function VerificationPage({ staffId, onBack }: { staffId: string; onBack: () => 
       setLoading(false);
     }
   };
-  // if (success) {
-  //   return (
-  //     <Card>
-  //       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 16, padding: "20px 0" }}>
-  //         <div
-  //           style={{
-  //               width: 60,
-  //               height: 60,
-  //               borderRadius: "50%",
-  //               background: "#D1FAE5",
-  //               display: "flex",
-  //               alignItems: "center",
-  //               justifyContent: "center",
-  //               color: BRAND_GREEN,
-  //           }}
-  //           >
-  //           <CheckCircle2 size={32} />
-  //           </div>
-  //         <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111827", margin: 0 }}>Verified!</h2>
-  //         <p style={{ color: "#6B7280", fontSize: 14, textAlign: "center", margin: 0 }}>
-  //           Staff ID <strong style={{ color: BRAND_GREEN }}>{staffId}</strong> has been successfully verified.
-  //         </p>
-  //         <button onClick={onBack} style={{
-  //           marginTop: 8, padding: "10px 28px", background: BRAND_GREEN,
-  //           color: "#fff", border: "none", borderRadius: 8, fontSize: 14,
-  //           fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
-  //         }}>
-  //           Back to Login
-  //         </button>
-  //       </div>
-  //     </Card>
-  //   );
-  // }
+  if (success) {
+    return (
+      <Card>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 16, padding: "20px 0" }}>
+          <div
+            style={{
+                width: 60,
+                height: 60,
+                borderRadius: "50%",
+                background: "#D1FAE5",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: BRAND_GREEN,
+            }}
+            >
+            <CheckCircle2 size={32} />
+            </div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111827", margin: 0 }}>Verified!</h2>
+          <p style={{ color: "#6B7280", fontSize: 14, textAlign: "center", margin: 0 }}>
+            Staff ID <strong style={{ color: BRAND_GREEN }}>{staffId}</strong> has been successfully verified.
+          </p>
+          <button onClick={onBack} style={{
+            marginTop: 8, padding: "10px 28px", background: BRAND_GREEN,
+            color: "#fff", border: "none", borderRadius: 8, fontSize: 14,
+            fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
+          }}>
+            Back to Login
+          </button>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card>
