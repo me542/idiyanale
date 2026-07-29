@@ -262,27 +262,6 @@ function LoginPage({
             )}
             </>
         </button>
-        
-        <div style={{ marginTop: 16, textAlign: "right" }}>
-          <Link
-            href="/register"
-            style={{
-              fontSize: 13,
-              color: BRAND_GREEN,
-              fontWeight: 600,
-              textDecoration: "none",
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.textDecoration = "underline";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.textDecoration = "none";
-            }}
-          >
-            Register
-          </Link>
-        </div>
       </div>
       <p style={{ marginTop: 24, fontSize: 11, color: "#9CA3AF", textAlign: "right" }}>
           © 2026 IDIYANALE · idiyanale.admin@gmail.com
@@ -308,6 +287,14 @@ function VerificationPage({ staffId, onBack }: { staffId: string; onBack: () => 
     const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [timeLeft]);
+
+  useEffect(() => {
+  const fullCode = code.join("");
+
+  if (fullCode.length === CODE_LENGTH && !loading) {
+    handleConfirm();
+  }
+}, [code]);
 
   const minutes = String(Math.floor(timeLeft / 60)).padStart(2, "0");
   const seconds = String(timeLeft % 60).padStart(2, "0");
@@ -378,39 +365,39 @@ function VerificationPage({ staffId, onBack }: { staffId: string; onBack: () => 
       setLoading(false);
     }
   };
-  if (success) {
-    return (
-      <Card>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 16, padding: "20px 0" }}>
-          <div
-            style={{
-                width: 60,
-                height: 60,
-                borderRadius: "50%",
-                background: "#D1FAE5",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: BRAND_GREEN,
-            }}
-            >
-            <CheckCircle2 size={32} />
-            </div>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111827", margin: 0 }}>Verified!</h2>
-          <p style={{ color: "#6B7280", fontSize: 14, textAlign: "center", margin: 0 }}>
-            Staff ID <strong style={{ color: BRAND_GREEN }}>{staffId}</strong> has been successfully verified.
-          </p>
-          <button onClick={onBack} style={{
-            marginTop: 8, padding: "10px 28px", background: BRAND_GREEN,
-            color: "#fff", border: "none", borderRadius: 8, fontSize: 14,
-            fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
-          }}>
-            Back to Login
-          </button>
-        </div>
-      </Card>
-    );
-  }
+  // if (success) {
+  //   return (
+  //     <Card>
+  //       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 16, padding: "20px 0" }}>
+  //         <div
+  //           style={{
+  //               width: 60,
+  //               height: 60,
+  //               borderRadius: "50%",
+  //               background: "#D1FAE5",
+  //               display: "flex",
+  //               alignItems: "center",
+  //               justifyContent: "center",
+  //               color: BRAND_GREEN,
+  //           }}
+  //           >
+  //           <CheckCircle2 size={32} />
+  //           </div>
+  //         <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111827", margin: 0 }}>Verified!</h2>
+  //         <p style={{ color: "#6B7280", fontSize: 14, textAlign: "center", margin: 0 }}>
+  //           Staff ID <strong style={{ color: BRAND_GREEN }}>{staffId}</strong> has been successfully verified.
+  //         </p>
+  //         <button onClick={onBack} style={{
+  //           marginTop: 8, padding: "10px 28px", background: BRAND_GREEN,
+  //           color: "#fff", border: "none", borderRadius: 8, fontSize: 14,
+  //           fontWeight: 700, cursor: "pointer", fontFamily: "inherit"
+  //         }}>
+  //           Back to Login
+  //         </button>
+  //       </div>
+  //     </Card>
+  //   );
+  // }
 
   return (
     <Card>
@@ -422,11 +409,11 @@ function VerificationPage({ staffId, onBack }: { staffId: string; onBack: () => 
             color: "#6B7280", fontSize: 13, padding: 0, marginBottom: 12,
             display: "flex", alignItems: "center", gap: 4, fontFamily: "inherit"
           }}
-        >
+            >
           <>
-  <ArrowLeft size={16} />
-  Back
-</>
+              <ArrowLeft size={16} />
+                Back
+                </>
         </button>
 
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "#111827", margin: "0 0 4px" }}>

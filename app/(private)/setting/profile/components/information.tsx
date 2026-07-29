@@ -117,7 +117,7 @@ function WorkInformationView({
             title="Edit information"
             className="rounded-full p-1 text-emerald-600 transition-colors hover:bg-emerald-50"
           >
-            <Pencil size={26} strokeWidth={1.75} />
+            <Pencil size={18} strokeWidth={1.75} />
           </button>
         ) : (
           <div className="flex items-center gap-2">

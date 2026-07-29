@@ -1,0 +1,51 @@
+import type { Permissions } from "./jwt";
+
+export interface AppRoute {
+  path: string;
+  title: string;
+  clickable: boolean;
+  permission?: (p: Permissions) => boolean;
+}
+
+export const ROUTES: AppRoute[] = [
+  { path: "/ticket/dashboard", title: "Dashboard", clickable: true },
+  { path: "/ticket/all-tickets", title: "All Tickets", clickable: true },
+  { path: "/ticket/reports", title: "Reports", clickable: true, permission: (p) => p.canAudit },
+  { path: "/minor-task/dashboard", title: "Dashboard", clickable: true },
+  { path: "/minor-task/all-tasks", title: "All Tasks", clickable: true },
+  { path: "/minor-task/reports", title: "Reports", clickable: true },
+  { path: "/chat", title: "Chat", clickable: true },
+  { path: "/knowledge", title: "Knowledge", clickable: true },
+  { path: "/setting/profile", title: "Profile", clickable: true },
+  { path: "/setting/top", title: "Top", clickable: true },
+  { path: "/setting/template", title: "Template", clickable: true },
+  { path: "/setting/user-management", title: "User Management", clickable: true },
+
+  // super-admin
+  { path: "/dashboard", title: "Dashboard", clickable: true },
+  { path: "/management/institution", title: "Institution Management", clickable: true },
+  { path: "/management/user", title: "User Management", clickable: true },
+];
+
+export const NON_CLICKABLE_PARENTS = new Set([
+  "/ticket",
+  "/minor-task",
+  "/setting",
+  "/management",
+]);
+
+export function getRoute(path: string) {
+  return ROUTES.find((r) => r.path === path);
+}
+
+// Staff-protected prefixes — used by middleware.ts
+export const PROTECTED_PATHS = [
+  "/ticket",
+  "/minor-task",
+  "/chat",
+  "/knowledge",
+  "/setting",
+];
+
+// Super-admin-protected prefixes — used by middleware.ts
+export const SUPER_ADMIN_PROTECTED_PATHS = ["/dashboard", "/management"];

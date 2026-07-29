@@ -1,13 +1,18 @@
-import { post } from "@/services/api/ApiHelper";
+import { post, clearAuth } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
 export const logoutUser = async () => {
-  return post(ApiEndpoint.LOGOUT, {});
+  try {
+    return await post(ApiEndpoint.LOGOUT, {});
+  } finally {
+    clearAuth();
+  }
 };
 
 export const logoutSuperAdmin = async () => {
-  return post(
-    ApiEndpoint.LOGOUT_SUPER_ADMIN,
-    {}
-  );
+  try {
+    return await post(ApiEndpoint.LOGOUT_SUPER_ADMIN, {});
+  } finally {
+    clearAuth();
+  }
 };

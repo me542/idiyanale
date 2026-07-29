@@ -1,35 +1,43 @@
 "use client";
 
 import { useState } from "react";
-import { ProfileSidebar, type NavKey, type ProfileUser } from "./components/profile-option";
-import { InformationPanel, type WorkInfo, type UnitInfo } from "./components/information";
+import {
+  ProfileSidebar,
+  type NavKey,
+  type ProfileUser,
+} from "./components/profile-option";
+import {
+  InformationPanel,
+  type WorkInfo,
+  type UnitInfo,
+} from "./components/information";
 
 const user: ProfileUser = {
-  name: "Reyvin Flor",
-  company: "Bakawan Data Analytics, INC.",
+  name: "",
+  company: "",
 };
 
 const workInfo: WorkInfo = {
-  staffId: "202512-57725",
-  firstName: "Reyvin",
-  lastName: "Flor",
-  contactNumber: "09512512512",
-  email: "reyvin.flor@cardmri.com",
-  institution: "BAKAWAN Data Analytics, INC.",
-  position: "Cloud Operation Support",
-  role: "Resolver",
+  staffId: "",
+  firstName: "",
+  lastName: "",
+  contactNumber: "",
+  email: "",
+  institution: "",
+  position: "",
+  role: "",
 };
 
 const unitInfo: UnitInfo = {
-  laptop: "Macbook Air M4",
-  serialNumber: "JHDWBFI33",
-  macAddress: "12:51:75:41",
-  ipAddress: "10.27.1.164",
+  laptop: "",
+  serialNumber: "",
+  macAddress: "",
+  ipAddress: "",
 };
 
 const kpi = {
-  staffId: "202512-57725",
-  firstName: "Reyvin",
+  staffId: "",
+  firstName: "",
 };
 
 export default function Page() {
@@ -37,7 +45,7 @@ export default function Page() {
   const [themeOn, setThemeOn] = useState(true);
 
   return (
-    <div className="min-h-screen bg-slate-50 ">
+    <div className="min-h-screen bg-slate-50">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <ProfileSidebar
           user={user}

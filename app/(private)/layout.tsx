@@ -18,18 +18,13 @@ export default function PrivateLayout({
   return (
     <ActivityPanelProvider>
       <div className="min-h-screen bg-gray-50">
-        {/* Sidebar */}
         <Sidebar />
 
-        {/* Right-side Activity panel */}
         <ActivityPanel />
 
-        {/* Main Content */}
         <div className="ml-20">
-          {/* Header */}
           <Header />
 
-          {/* Page */}
           <main className="p-6">
             {children}
           </main>

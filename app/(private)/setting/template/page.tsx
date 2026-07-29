@@ -7,6 +7,7 @@ type SubCategory = {
   id: string;
   name: string;
   description: string;
+  environment: boolean;
 };
 
 type Category = {
@@ -168,7 +169,12 @@ export default function Page() {
   function addSubCategory(name: string) {
     const trimmed = name.trim();
     if (!trimmed || !selectedTicketTypeId || !selectedCategoryId) return;
-    const newSub: SubCategory = { id: uid(), name: trimmed, description: "" };
+    const newSub: SubCategory = {
+      id: uid(),
+      name: trimmed,
+      description: "",
+      environment: false,
+    };
     setTicketTypes((prev) =>
       prev.map((t) =>
         t.id === selectedTicketTypeId
@@ -258,6 +264,32 @@ export default function Page() {
     );
   }
 
+  function toggleEnvironment(enabled: boolean) {
+    if (!selectedTicketTypeId || !selectedCategoryId || !selectedSubCategoryId)
+      return;
+    setTicketTypes((prev) =>
+      prev.map((t) =>
+        t.id === selectedTicketTypeId
+          ? {
+              ...t,
+              categories: t.categories.map((c) =>
+                c.id === selectedCategoryId
+                  ? {
+                      ...c,
+                      subCategories: c.subCategories.map((s) =>
+                        s.id === selectedSubCategoryId
+                          ? { ...s, environment: enabled }
+                          : s
+                      ),
+                    }
+                  : c
+              ),
+            }
+          : t
+      )
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 ">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
@@ -278,6 +310,7 @@ export default function Page() {
           onAddSubCategory={addSubCategory}
           onRenameSubCategory={renameSubCategory}
           onDeleteSubCategory={deleteSubCategory}
+          onToggleEnvironment={toggleEnvironment}
         />
         <DescriptionCard
           key={selectedSubCategory?.id ?? "none"}
@@ -307,6 +340,7 @@ function TemplateDetailsCard({
   onAddSubCategory,
   onRenameSubCategory,
   onDeleteSubCategory,
+  onToggleEnvironment,
 }: {
   ticketTypes: TicketType[];
   selectedTicketType: TicketType | null;
@@ -324,6 +358,7 @@ function TemplateDetailsCard({
   onAddSubCategory: (name: string) => void;
   onRenameSubCategory: (id: string, name: string) => void;
   onDeleteSubCategory: (id: string) => void;
+  onToggleEnvironment: (enabled: boolean) => void;
 }) {
   return (
     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -413,6 +448,28 @@ function TemplateDetailsCard({
             onRename={onRenameSubCategory}
             onDelete={onDeleteSubCategory}
           />
+        </FieldRow>
+
+        <FieldRow label="Environment">
+          <div className="flex flex-1 items-center gap-2">
+            <Switch
+              checked={selectedSubCategory?.environment ?? false}
+              onChange={onToggleEnvironment}
+              disabled={!selectedSubCategory}
+              label="Toggle environment"
+            />
+            <span
+              className={`text-sm ${
+                selectedSubCategory ? "text-slate-500" : "text-slate-300"
+              }`}
+            >
+              {!selectedSubCategory
+                ? "Select a subcategory first"
+                : selectedSubCategory.environment
+                ? "Enabled"
+                : "Disabled"}
+            </span>
+          </div>
         </FieldRow>
       </div>
     </div>
@@ -698,6 +755,43 @@ function ManagePopover({
         </div>
       )}
     </div>
+  );
+}
+
+// Toggle switch — small, accessible on/off control used for the Environment field.
+function Switch({
+  checked,
+  onChange,
+  disabled,
+  label,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  disabled?: boolean;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 ${
+        disabled
+          ? "cursor-not-allowed bg-slate-100"
+          : checked
+          ? "bg-emerald-500"
+          : "bg-slate-200"
+      }`}
+    >
+      <span
+        className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
   );
 }
 

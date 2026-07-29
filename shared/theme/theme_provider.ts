@@ -3,7 +3,7 @@ export const lightTheme = {
   primary: "#474747",
   secondary: "#C3C3C3",
   accent: "#E9F5FF",
-  border: "#C3C3C3",
+  borderoutline: "#C3C3C3",
 
   // Ticket Status Colors
   total_tickets: "#60A5FA",

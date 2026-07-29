@@ -1,5 +1,10 @@
-import { post } from "./ApiHelper";
+import { post, postForm } from "./ApiHelper";
 import { ApiEndpoint } from "./ApiEndpoint";
+import {
+  buildCreateTicketFormData,
+  CreateTicketPayload,
+  TicketDTO,
+} from "@/shared/layout/Activity/api/create-sr";
 
 interface RegisterPayload {
   staff_id: string;
@@ -27,12 +32,22 @@ export const ApiWrapper = {
   },
 
   addInstitution(institutionCode: string, institutionName: string, description: string) {
-    return post(ApiEndpoint.ADD_INSTITUTION, {
+    return post(ApiEndpoint.POST_ADD_INSTI, {
       institution_code: institutionCode,
       institution_name: institutionName,
       description,
       status: "active",
       createdAt: new Date().toISOString(),
+    });
+  },
+
+  // Ticket
+  createTicket(payload: CreateTicketPayload, files: File[] = []) {
+    const formData = buildCreateTicketFormData(payload, files);
+    // unwrap: true — pulls `.data` out of JSONResponseWithDataV1's
+    // { code, message, data } envelope so callers get the ticket directly.
+    return postForm<TicketDTO>(ApiEndpoint.POST_CREATE_TICKET, formData, {
+      unwrap: true,
     });
   },
 };

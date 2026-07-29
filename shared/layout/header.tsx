@@ -9,8 +9,10 @@ import {
   ChevronRight, Bell, Search, AlertTriangle, X,
   Ticket
 } from "lucide-react";
-import { logoutSuperAdmin } from "@/services/integration/auth/logout"; // adjust path to wherever logout.ts actually lives
+import { logoutUser, logoutSuperAdmin } from "@/services/integration/auth/logout";
 import { useActivityPanel } from "./activity-panel-context";
+import { ROUTES, NON_CLICKABLE_PARENTS, getRoute } from "@/lib/auth/routes";
+import { getCurrentUser, type CurrentUser } from "./Activity/api/current_user";
 
 interface Breadcrumb {
   href: string;
@@ -19,46 +21,39 @@ interface Breadcrumb {
   isClickable: boolean;
 }
 
-const CLICKABLE_ROUTES = new Set([
-  "/ticket/dashboard",
-  "/ticket/all-tickets",
-  "/ticket/reports",
-  "/minor-task/dashboard",
-  "/minor-task/all-tasks",
-  "/minor-task/reports",
-  "/chat",
-  "/settings/profile",
-  "/settings/top",
-  "/settings/template",
-  "/settings/user management",
-  "/knowledge",
-
-  //super-admin
-  "/dashboard",
-  "/management/institution",
-  "/management/user"
-]);
-
-const NON_CLICKABLE_PARENTS = new Set([
-  "/ticket",
-  "/minor-task",
-  "/settings",
-  "/management"
-]);
-
 export default function Header() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const isMounted = typeof document !== "undefined";
   const dropdownRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const router = useRouter();
   const { openPanel } = useActivityPanel();
 
-  // Portals need `document`, which only exists on the client
+  // Fetch the live, full user record (not just what's cached from login)
+  useEffect(() => {
+    getCurrentUser()
+      .then(setCurrentUser)
+      .catch((err) => {
+        console.error("Failed to load current user:", err);
+      });
+  }, []);
 
+  const isSuperAdmin = currentUser?.kind === "super-admin";
+  const isStaff = currentUser?.kind === "staff";
+
+  const displayName = isSuperAdmin
+    ? currentUser?.data.username ?? "Super-Admin"
+    : isStaff && currentUser
+      ? `${currentUser.data.first_name} ${currentUser.data.last_name}`.trim()
+      : "User";
+
+  const displayRole = isStaff && currentUser?.data.role ? currentUser.data.role.role_name : "";
+  const displayInstitution = isStaff && currentUser ? currentUser.data.institution_id ?? "" : "";
+  const displayStaffId = isStaff && currentUser ? currentUser.data.staff_id ?? "" : "";
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -94,27 +89,6 @@ export default function Header() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isLogoutConfirmOpen, isLoggingOut]);
 
-  // Page configuration
-  const pageConfig: Record<string, { title: string; icon?: React.ReactNode }> = {
-    "/ticket/dashboard": { title: "Dashboard" },
-    "/ticket/all-tickets": { title: "All Tickets" },
-    "/ticket/reports": { title: "Reports" },
-    "/minor-task/dashboard": { title: "Dashboard" },
-    "/minor-task/all-tasks": { title: "All Tasks" },
-    "/minor-task/reports": { title: "Reports" },
-    "/settings/profile": { title: "Profile" },
-    "/settings/top": { title: "Top" },
-    "/settings/template": { title: "Template" },
-    "/settings/user management": { title: "User Management" },
-    "/chat": { title: "Chat" },
-    "/knowledge": { title: "Knowledge" },
-
-    //super-admin
-    "/dashboard": { title: "Dashboard" },
-    "/management/institution": { title: "Institution Management" },
-    "/management/user": { title: "User Management" }
-  };
-
   // Generate breadcrumbs from pathname with clickable logic
   const generateBreadcrumbs = (): Breadcrumb[] => {
     const paths = pathname.split("/").filter((path) => path !== "");
@@ -133,21 +107,19 @@ export default function Header() {
       currentPath += `/${path}`;
       let label = path.charAt(0).toUpperCase() + path.slice(1);
 
-      // Custom labels for specific paths
       if (path === "Ticket") label = "Ticket";
       if (path === "Minor Task") label = "Minor Task";
-      if (path === "Settings") label = "Settings";
+      if (path === "Setting") label = "Setting";
       if (path === "Chat") label = "Chat";
       if (path === "Knowledge") label = "Knowledge";
 
-      // Custom labels for super-admin paths
       if (path === "Super-Admin") label = "Super Admin";
       if (path === "Management") label = "Management";
       if (path === "Institution") label = "Institution";
       if (path === "User") label = "User";
 
-      // Determine if this breadcrumb should be clickable
-      const isClickable = CLICKABLE_ROUTES.has(currentPath) && !NON_CLICKABLE_PARENTS.has(currentPath);
+      const isClickable = ROUTES.some((r) => r.path === currentPath && r.clickable)
+        && !NON_CLICKABLE_PARENTS.has(currentPath);
       const isLast = index === paths.length - 1;
 
       breadcrumbs.push({
@@ -162,7 +134,7 @@ export default function Header() {
   };
 
   const breadcrumbs = generateBreadcrumbs();
-  const currentPageConfig = pageConfig[pathname] || { title: breadcrumbs[breadcrumbs.length - 1]?.label || "Dashboard" };
+  const currentPageConfig = getRoute(pathname) ?? { title: breadcrumbs[breadcrumbs.length - 1]?.label || "Dashboard" };
   const pageTitle = currentPageConfig.title;
 
   const handleSearch = (e: React.FormEvent) => {
@@ -172,20 +144,22 @@ export default function Header() {
     }
   };
 
-  // Opens the confirmation modal instead of logging out directly
   const handleLogoutClick = () => {
     setIsLogoutConfirmOpen(true);
   };
 
-  // Called once the user confirms inside the modal
+  // Routes to the correct logout endpoint based on the fetched role,
+  // instead of always hitting the super-admin logout route.
   const handleConfirmLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
-      await logoutSuperAdmin();
+      if (isSuperAdmin) {
+        await logoutSuperAdmin();
+      } else {
+        await logoutUser();
+      }
     } catch (error) {
-      // Even if the API call fails, we still want to clear the user out
-      // of the client since their session may already be invalid.
       console.error("Logout request failed:", error);
     } finally {
       setIsLoggingOut(false);
@@ -200,15 +174,11 @@ export default function Header() {
       {/* Left Section - Title & Breadcrumbs */}
       <div className="flex flex-col">
         <div className="flex items-center gap-2">
-          {currentPageConfig.icon && (
-            <span className="text-teal-600">{currentPageConfig.icon}</span>
-          )}
           <h1 className="text-2xl font-bold text-gray-800 tracking-tight">
             {pageTitle}
           </h1>
         </div>
 
-        {/* Breadcrumbs Navigation */}
         {breadcrumbs.length > 1 && (
           <nav className="flex items-center gap-1.5 text-sm mt-1" aria-label="Breadcrumb">
             {breadcrumbs.map((crumb, idx) => (
@@ -238,7 +208,6 @@ export default function Header() {
 
       {/* Right Section - Search & Profile */}
       <div className="flex items-center gap-4">
-        {/* Global Search (Optional) */}
         <form onSubmit={handleSearch} className="hidden lg:block">
           <div className="relative">
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -252,26 +221,27 @@ export default function Header() {
           </div>
         </form>
 
-        {/* Notifications */}
         <button className="relative p-2 hover:bg-gray-100 rounded-xl transition-colors">
           <Bell size={20} className="text-gray-600" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
         </button>
-        
-        <div>
-  <button
-    onClick={() => openPanel()}
-    className="group relative flex items-center gap-3 px-3.5 py-2.5 bg-white/80 hover:bg-[#1E4637] rounded-xl transition-colors"
-  >
-    <Ticket
-      size={20}
-      className="text-[#1E4637] transition-colors group-hover:text-white"
-    />
-    <span className="text-[12px] uppercase font-semibold text-[#1E4637] transition-colors group-hover:text-white">
-      + Ticket
-    </span>
-  </button>
-</div>
+
+        {!isSuperAdmin && (
+          <div>
+            <button
+              onClick={() => openPanel()}
+              className="group relative flex items-center gap-3 px-3.5 py-2.5 bg-white/80 hover:bg-[#1E4637] rounded-xl transition-colors"
+            >
+              <Ticket
+                size={20}
+                className="text-[#1E4637] transition-colors group-hover:text-white"
+              />
+              <span className="text-[12px] uppercase font-semibold text-[#1E4637] transition-colors group-hover:text-white">
+                + Ticket
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Profile Dropdown */}
         <div className="relative" ref={dropdownRef}>
@@ -283,13 +253,12 @@ export default function Header() {
               <UserIcon size={20} />
             </div>
             <div className="hidden md:block">
-              <p className="text-sm font-bold text-gray-900 leading-none">Super-Admin</p>
-              <p className="text-[10px] text-gray-400 mt-1 uppercase font-semibold">Admin</p>
+              <p className="text-sm font-bold text-gray-900 leading-none">{displayName}</p>
+              <p className="text-[10px] text-gray-400 mt-1 uppercase font-semibold">{isSuperAdmin ? "Admin" : displayRole}</p>
             </div>
             <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${isProfileOpen ? "rotate-180" : ""}`} />
           </div>
 
-          {/* Profile Dropdown Menu */}
           {isProfileOpen && (
             <div className="absolute right-0 mt-3 w-80 bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="h-24 bg-linear-to-br from-[#D9E392] to-[#B5C94B]" />
@@ -301,25 +270,27 @@ export default function Header() {
                   </div>
                 </div>
 
-                <h3 className="text-lg font-bold text-gray-900">Super-Admin</h3>
-                <p className="text-sm text-gray-500">202501-123456</p>
+                <h3 className="text-lg font-bold text-gray-900">{displayName}</h3>
+                {displayStaffId && <p className="text-sm text-gray-500">{displayStaffId}</p>}
 
                 <div className="mt-6 space-y-4">
                   <div className="flex gap-3">
                     <UserIcon size={16} className="text-gray-400 mt-1" />
                     <div>
                       <p className="text-[10px] font-bold text-gray-400 uppercase">Role</p>
-                      <p className="text-sm font-semibold text-gray-700">Cloud Management</p>
+                      <p className="text-sm font-semibold text-gray-700">{isSuperAdmin ? "Cloud Management" : displayRole || "—"}</p>
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
-                    <Lock size={16} className="text-gray-400 mt-1" />
-                    <div>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase">Institution</p>
-                      <p className="text-sm font-semibold text-gray-700">BAKAWAN Data Analytics, INC</p>
+                  {!isSuperAdmin && (
+                    <div className="flex gap-3">
+                      <Lock size={16} className="text-gray-400 mt-1" />
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">Institution</p>
+                        <p className="text-sm font-semibold text-gray-700">{displayInstitution || "—"}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="mt-8 space-y-3">
@@ -337,8 +308,7 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Logout Confirmation Modal (rendered via portal so the header's
-          backdrop-blur filter doesn't hijack position:fixed centering) */}
+      {/* Logout Confirmation Modal */}
       {isMounted && isLogoutConfirmOpen && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
