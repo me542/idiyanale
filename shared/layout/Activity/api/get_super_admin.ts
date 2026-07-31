@@ -2,6 +2,8 @@ import { get } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
 export interface SuperAdmin {
+  first_name: any;
+  last_name: any;
   id: number;
   username: string;
   role: string;

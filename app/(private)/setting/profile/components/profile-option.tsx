@@ -1,31 +1,52 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Info, SlidersHorizontal } from "lucide-react";
+import { getCurrentUser } from "@/shared/layout/Activity/api/current_user";
 
 export type NavKey = "work" | "kpi";
 
-export type ProfileUser = {
-  name: string;
-  company: string;
-  /** Single character shown in the avatar circle. Falls back to the first
-   * letter of `name` if not provided. */
-  initial?: string;
-};
-
 export function ProfileSidebar({
-  user,
   activeNav,
   onSelectNav,
   themeOn,
   onToggleTheme,
 }: {
-  user: ProfileUser;
   activeNav: NavKey;
   onSelectNav: (nav: NavKey) => void;
   themeOn: boolean;
   onToggleTheme: (next: boolean) => void;
 }) {
-  const initial = (user.initial ?? user.name.charAt(0)).toUpperCase();
+  const [user, setUser] = useState({
+    name: "",
+    company: "",
+    initial: "",
+  });
+
+  useEffect(() => {
+    async function loadUser() {
+      const current = await getCurrentUser();
+      if (!current) return;
+
+      if (current.kind === "staff") {
+        setUser({
+          name: `${current.data.first_name} ${current.data.last_name}`,
+          company: String(current.data.institution_id ?? ""),
+          initial: current.data.first_name?.charAt(0) ?? "",
+        });
+      } else {
+        setUser({
+          name: `${current.data.first_name} ${current.data.last_name}`,
+          company: "Super Administrator",
+          initial: current.data.first_name?.charAt(0) ?? "",
+        });
+      }
+    }
+
+    loadUser();
+  }, []);
+
+  const initial = (user.initial || user.name.charAt(0) || "?").toUpperCase();
 
   return (
     <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -34,6 +55,7 @@ export function ProfileSidebar({
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-emerald-800 text-xl font-semibold text-white">
           {initial}
         </div>
+
         <div className="min-w-0">
           <p className="truncate text-base font-semibold text-slate-800">
             {user.name}
@@ -52,6 +74,7 @@ export function ProfileSidebar({
           active={activeNav === "work"}
           onClick={() => onSelectNav("work")}
         />
+
         <NavButton
           label="Key Performance Indicator"
           icon={<SlidersHorizontal size={16} />}
