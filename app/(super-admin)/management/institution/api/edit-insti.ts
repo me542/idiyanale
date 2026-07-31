@@ -26,7 +26,7 @@ export function editInstitution(
     formData.append("logo", payload.logo);
   }
 
-  return postForm(ApiEndpoint.EDIT_INSTITUTION(institutionId), formData, {
+  return postForm(ApiEndpoint.POST_EDIT_INSTI(institutionId), formData, {
     unwrap: true,
   });
 }
