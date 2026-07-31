@@ -2,21 +2,9 @@ import { post } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 import { decodeToken, extractPermissions } from "@/lib/auth/jwt";
 
-interface VerifiedUser {
-  id: number;
-  staff_id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  institution_id: number;
-  institution_name: string;
-  role_name: string;
-}
-
 interface VerifyOtpResponse {
   response?: {
     token: string;
-    user: VerifiedUser;
   };
   message?: string;
   ret_code?: string;
@@ -28,7 +16,7 @@ interface VerifyOtpResult {
   retCode?: string;
 }
 
-function persistSession(token: string, user: VerifiedUser) {
+function persistSession(token: string) {
   const claims = decodeToken(token);
   if (!claims) {
     throw new Error("Received an invalid or expired token");
@@ -36,18 +24,21 @@ function persistSession(token: string, user: VerifiedUser) {
 
   localStorage.setItem("token", token);
   localStorage.setItem("role", claims.role);
-  localStorage.setItem("permissions", JSON.stringify(extractPermissions(claims)));
-  localStorage.setItem("institution_id", String(user.institution_id));
+  localStorage.setItem(
+    "permissions",
+    JSON.stringify(extractPermissions(claims))
+  );
+
+  if (claims.institution_id !== undefined) {
+    localStorage.setItem("institution_id", String(claims.institution_id));
+  }
+
   localStorage.setItem(
     "user",
     JSON.stringify({
-      id: user.id,
-      staffId: user.staff_id,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      email: user.email,
-      institutionName: user.institution_name,
-      roleName: user.role_name,
+      id: claims.id,
+      staffId: claims.staff_id,
+      roleName: claims.role,
     })
   );
 
@@ -70,13 +61,12 @@ export const verifyOTP = async (
   }
 
   const token = res.response?.token;
-  const user = res.response?.user;
 
-  if (!token || !user) {
+  if (!token) {
     throw new Error(res.message || "Invalid OTP");
   }
 
-  persistSession(token, user);
+  persistSession(token);
 
   return {
     token,
@@ -84,4 +74,3 @@ export const verifyOTP = async (
     retCode: res.ret_code,
   };
 };
-

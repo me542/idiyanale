@@ -14,7 +14,7 @@ export type InstitutionResp = {
 // unwrap:true pulls data.response out for you (see ApiHelper.handleResponse),
 // so this resolves directly to the array — no res.data indirection needed.
 export function getInstitutions() {
-  return get<InstitutionResp[]>(ApiEndpoint.GET_INSTITUTIONS, {
+  return get<InstitutionResp[]>(ApiEndpoint.GET_ALL_INSTITUTIONS, {
     unwrap: true,
   });
 }

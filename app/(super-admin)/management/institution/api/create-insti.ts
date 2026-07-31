@@ -9,7 +9,7 @@ export type CreateInstitutionPayload = {
 };
 
 export function createInstitution(payload: CreateInstitutionPayload) {
-  return post(ApiEndpoint.ADD_INSTITUTION, {
+  return post(ApiEndpoint.POST_ADD_INSTI, {
     institution_code: payload.institution_code,
     institution_name: payload.institution_name,
     description: payload.description,
