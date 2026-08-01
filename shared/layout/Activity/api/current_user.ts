@@ -1,5 +1,5 @@
-import { getUserById, type User } from "./get_user"; // adjust to actual path
-import { getSuperAdminById, type SuperAdmin } from "./get_super_admin"; // adjust to actual path
+import { getUserById, type User } from "./get_user"; 
+import { getSuperAdminById, type SuperAdmin } from "./get_super_admin"; 
 
 export type CurrentUser =
   | { kind: "staff"; data: User }

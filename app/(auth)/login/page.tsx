@@ -110,7 +110,7 @@ function Card({ children }: { children: React.ReactNode }) {
         display: "flex",
         width: "100%",
         maxWidth: 1000,
-        minHeight: 550,
+        minHeight: 500,
         background: "#fff",
         borderRadius: 20,
         overflow: "hidden",
@@ -175,8 +175,8 @@ function LoginPage({
   return (
     <Card>
       <div>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: "#111827", margin: "0 0 4px" }}>
-          Welcome Back
+        <h1 style={{ fontSize: 32, fontWeight: 800, color: "#111827", margin: "0 0 4px" }}>
+          Welcome
         </h1>
         <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 24px" }}>
           Enter your Staff ID to receive a verification code.
