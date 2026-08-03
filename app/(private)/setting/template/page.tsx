@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import { editTicketType } from "./api/patch_ticket_type";
 import { getTicketTypeById } from "./api/get_ticket_type_by_id";
 import { getTicketType } from "./api/get_ticket_type";
+import { getCategories } from "./api/get_category";
 
 import type { TicketType, Category, SubCategory } from "./components/types";
 import { uid } from "./components/types";
@@ -15,6 +16,10 @@ import { DescriptionCard } from "./components/description";
 export default function Page() {
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+
+  const [loadedCategoryTicketTypeIds, setLoadedCategoryTicketTypeIds] =
+    useState<Set<string>>(new Set());
   const [selectedTicketTypeId, setSelectedTicketTypeId] = useState<string | null>(
     null
   );
@@ -46,12 +51,6 @@ export default function Page() {
     [selectedCategory, selectedSubCategoryId]
   );
 
-  // ---- initial load ------------------------------------------------------
-  // getTicketType() has no params — the backend reads institution_id off the
-  // authenticated user's session and returns every ticket type that belongs
-  // to it. Categories/subcategories aren't part of this response, so they
-  // start empty until a categories endpoint is wired in.
-
   useEffect(() => {
     let cancelled = false;
 
@@ -70,10 +69,15 @@ export default function Page() {
 
         setTicketTypes(mapped);
         setSelectedTicketTypeId(mapped[0]?.id ?? null);
-        setSelectedCategoryId(mapped[0]?.categories[0]?.id ?? null);
-        setSelectedSubCategoryId(
-          mapped[0]?.categories[0]?.subCategories[0]?.id ?? null
-        );
+
+        if (mapped[0]) {
+          const categories = await ensureCategoriesLoaded(mapped[0].id);
+          setSelectedCategoryId(categories[0]?.id ?? null);
+          setSelectedSubCategoryId(categories[0]?.subCategories[0]?.id ?? null);
+        } else {
+          setSelectedCategoryId(null);
+          setSelectedSubCategoryId(null);
+        }
       } catch (err) {
         console.error(err);
         if (err instanceof Error) alert(err.message);
@@ -88,14 +92,48 @@ export default function Page() {
     };
   }, []);
 
-  // ---- selection helpers -------------------------------------------------
+  async function ensureCategoriesLoaded(
+    ticketTypeId: string
+  ): Promise<Category[]> {
+    if (loadedCategoryTicketTypeIds.has(ticketTypeId)) {
+      return (
+        ticketTypes.find((t) => t.id === ticketTypeId)?.categories ?? []
+      );
+    }
 
-  function handleSelectTicketType(id: string) {
+    setCategoriesLoading(true);
+    try {
+      const list = await getCategories(ticketTypeId);
+      const mapped: Category[] = list.map((c) => ({
+        id: String(c.category_id),
+        name: c.category_name,
+        subCategories: [],
+      }));
+
+      setTicketTypes((prev) =>
+        prev.map((t) =>
+          t.id === ticketTypeId ? { ...t, categories: mapped } : t
+        )
+      );
+      setLoadedCategoryTicketTypeIds((prev) => new Set(prev).add(ticketTypeId));
+      return mapped;
+    } catch (err) {
+      console.error(err);
+      if (err instanceof Error) alert(err.message);
+      return [];
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }
+
+  async function handleSelectTicketType(id: string) {
     setSelectedTicketTypeId(id);
-    const type = ticketTypes.find((t) => t.id === id);
-    const firstCategory = type?.categories[0] ?? null;
-    setSelectedCategoryId(firstCategory?.id ?? null);
-    setSelectedSubCategoryId(firstCategory?.subCategories[0]?.id ?? null);
+    setSelectedCategoryId(null);
+    setSelectedSubCategoryId(null);
+
+    const categories = await ensureCategoriesLoaded(id);
+    setSelectedCategoryId(categories[0]?.id ?? null);
+    setSelectedSubCategoryId(categories[0]?.subCategories[0]?.id ?? null);
   }
 
   function handleSelectCategory(id: string) {
@@ -108,8 +146,6 @@ export default function Page() {
     setSelectedSubCategoryId(id);
   }
 
-  // ---- ticket type CRUD ---------------------------------------------------
-
   function addTicketType(name: string) {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -120,6 +156,7 @@ export default function Page() {
       status: "",
     };
     setTicketTypes((prev) => [...prev, newType]);
+    setLoadedCategoryTicketTypeIds((prev) => new Set(prev).add(newType.id));
     setSelectedTicketTypeId(newType.id);
     setSelectedCategoryId(null);
     setSelectedSubCategoryId(null);
@@ -168,8 +205,6 @@ export default function Page() {
     });
   }
 
-  // ---- category CRUD ------------------------------------------------------
-
   function addCategory(name: string) {
     const trimmed = name.trim();
     if (!trimmed || !selectedTicketTypeId) return;
@@ -216,8 +251,6 @@ export default function Page() {
       })
     );
   }
-
-  // ---- subcategory CRUD ----------------------------------------------------
 
   function addSubCategory(name: string) {
     const trimmed = name.trim();
@@ -288,8 +321,6 @@ export default function Page() {
       })
     );
   }
-
-  // ---- description -----------------------------------------------------
 
   function saveDescription(text: string) {
     if (!selectedTicketTypeId || !selectedCategoryId || !selectedSubCategoryId)
@@ -365,6 +396,7 @@ export default function Page() {
             <CategoryField
               selectedTicketType={selectedTicketType}
               selectedCategory={selectedCategory}
+              loading={categoriesLoading}
               onSelect={handleSelectCategory}
               onAdd={addCategory}
               onRename={renameCategory}
