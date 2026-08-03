@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download, Loader2 } from "lucide-react";
 
 type Ticket = {
-  ID: number;
   TicketID: string;
   ProjectID: number;
   InstitutionID: number;
@@ -57,7 +56,6 @@ type ColumnDef = {
 };
 
 const columns: ColumnDef[] = [
-  { key: "ID", label: "ID", type: "number" },
   { key: "TicketID", label: "Ticket ID", type: "text" },
   { key: "ProjectID", label: "Project", type: "number" },
   { key: "InstitutionID", label: "Institution", type: "number" },

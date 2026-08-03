@@ -23,6 +23,11 @@ export interface CategoryItem {
 }
 
 export interface DueActivityItem {
+  ticketId: string;
   title: string;
-  due: string;
+  due: string;      
+  status: string;
+  isOverdue: boolean;
+  isToday: boolean;
+  createdLabel: string;
 }

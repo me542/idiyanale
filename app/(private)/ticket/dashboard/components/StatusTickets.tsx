@@ -16,7 +16,8 @@ const DEFAULT: StatusCounts = {
 // 👇 adjust these keys to match your real backend status values
 const STATUS_MAP: Record<string, keyof Omit<StatusCounts, "total">> = {
   forreview: "forReview",
-  forresolution: "forReview",    
+  forresolution: "forReview",
+  forassignment: "forReview",     
   inprogress: "inProgress",
   resolved: "resolved",
   closed: "closed",

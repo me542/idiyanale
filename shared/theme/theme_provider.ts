@@ -7,8 +7,8 @@ export const lightTheme = {
 
   // Ticket Status Colors
   total_tickets: "#60A5FA",
-  for_review: "#A78BFA",
-  in_progress: "#FBBF24",
+  for_review: "#FBBF24",
+  in_progress: "#A78BFA",
   resolved: "#34D399",
   closed: "#9CA3AF",
   cancelled: "#FFA1A1",

@@ -120,6 +120,30 @@ interface NewTicketPanelViewProps {
 }
 
 /**
+ * Pulls a human-readable message out of whatever createTicket rejects with.
+ * Handles: our own CreateTicketError, a generic Error, and an axios-style
+ * error with a `response.data.message` (common shape for postForm/ApiHelper
+ * failures that aren't caught and re-thrown as CreateTicketError).
+ * Adjust the axios-style branch if your ApiHelper throws something else.
+ */
+function getTicketErrorMessage(err: unknown): string {
+    if (err instanceof CreateTicketError) {
+        return err.message;
+    }
+
+    const anyErr = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+    };
+
+    return (
+        anyErr?.response?.data?.message ||
+        anyErr?.message ||
+        "Failed to create ticket. Please try again."
+    );
+}
+
+/**
  * Ticket form content only — no header, no aside wrapper, no overlay.
  * Two-column layout matching the original mockup; needs a wide panel
  * (ActivityPanel widens itself while this view is active).
@@ -190,11 +214,7 @@ export default function NewTicketPanelView({ onCancel, onSubmit }: NewTicketPane
             onSubmit?.(form);
             resetForm();
         } catch (err) {
-            setError(
-                err instanceof CreateTicketError
-                    ? err.message
-                    : "Failed to create ticket. Please try again."
-            );
+            setError(getTicketErrorMessage(err));
         } finally {
             setSubmitting(false);
         }
