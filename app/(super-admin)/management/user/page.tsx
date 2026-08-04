@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getAllUsers, type UserDetailsResp } from "./api/get-user";
+import {
+  getUsersByInstitution,
+  type UserByInstitutionResponse,
+} from "./api/get_user_by_insti_id";
+import {
+  changeUserStatus,
+  type ChangeUserStatusRequest,
+} from "./api/patch_user_status";
 
 type Status = "active" | "inactive";
 
@@ -25,77 +32,78 @@ type InstitutionGroup = {
 };
 
 const FALLBACK_COLOR = "#3C4046";
+const DEFAULT_INSTITUTION_ID = 1;
 
-function groupByInstitution(users: UserDetailsResp[]): InstitutionGroup[] {
-  const groups = new Map<string, InstitutionGroup>();
-
-  for (const user of users) {
-    const institutionId = String(user.institution_id ?? "unassigned");
-    const institutionName = user.institution_name || "Unassigned";
-
-    const staffRecord: Staff = {
-      id: String(user.id),
-      staffId: user.staff_id ?? "",
-      firstName: user.first_name ?? "",
-      lastName: user.last_name ?? "",
-      username: user.username ?? "",
-      number: user.phone_no ?? "",
-      email: user.email ?? "",
-      roleName: user.role?.role_name ?? "—",
-      status:
-  user.status?.toLowerCase() === "active"
-    ? "active"
-    : "inactive",
-    };
-
-    const existing = groups.get(institutionId);
-    if (existing) {
-      existing.staff.push(staffRecord);
-    } else {
-      groups.set(institutionId, {
-        id: institutionId,
-        name: institutionName,
-        color: FALLBACK_COLOR,
-        staff: [staffRecord],
-      });
-    }
-  }
-
-  return Array.from(groups.values());
+// UI <-> API status mapping. The API has a third state ("pending") that
+// the UI currently has no concept of; it's folded into "inactive" for now.
+function toApiStatus(status: Status): ChangeUserStatusRequest["status"] {
+  return status === "active" ? "active" : "disabled";
 }
 
-export default function UserManagementPage() {
+function fromApiStatus(status: string | undefined): Status {
+  return status?.toLowerCase() === "active" ? "active" : "inactive";
+}
+
+function toGroup(
+  institutionId: number | string,
+  users: UserByInstitutionResponse[]
+): InstitutionGroup {
+  const staff: Staff[] = users.map((user) => ({
+    id: String(user.id),
+    staffId: user.staff_id ?? "",
+    firstName: user.first_name ?? "",
+    lastName: user.last_name ?? "",
+    username: user.username ?? "",
+    number: user.phone_no ?? "",
+    email: user.email ?? "",
+    roleName: user.role?.role_name ?? "—",
+    status: fromApiStatus(user.status),
+  }));
+
+  const name = users[0]?.institution?.institution_name || "Unassigned";
+
+  return {
+    id: String(institutionId),
+    name,
+    color: FALLBACK_COLOR,
+    staff,
+  };
+}
+
+export default function UserManagementPage({
+  institutionId = DEFAULT_INSTITUTION_ID,
+}: {
+  institutionId?: number | string;
+}) {
   const [groups, setGroups] = useState<InstitutionGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
-  setLoading(true);
-  setError(null);
+    setLoading(true);
+    setError(null);
 
-  try {
-    // ApiHelper automatically attaches the token
-    const users = await getAllUsers();
-
-    setGroups(groupByInstitution(users));
-  } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Failed to load user data."
-    );
-    setGroups([]);
-  } finally {
-    setLoading(false);
-  }
-}, []);
+    try {
+      const users = await getUsersByInstitution(institutionId);
+      setGroups(users.length > 0 ? [toGroup(institutionId, users)] : []);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load user data."
+      );
+      setGroups([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [institutionId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
-  function updateStaff(
+  function patchLocalStaff(
     groupId: string,
     staffId: string,
     patch: Partial<Staff>
@@ -112,8 +120,42 @@ export default function UserManagementPage() {
             }
       )
     );
-    // TODO: PATCH the change back to the API once an update endpoint exists, e.g.
-    // await updateUserStatus(staffId, patch.status, token)
+  }
+
+  async function updateStaffStatus(
+    groupId: string,
+    staffId: string,
+    nextStatus: Status
+  ) {
+    // find current status so we can roll back on failure
+    const group = groups.find((g) => g.id === groupId);
+    const staff = group?.staff.find((s) => s.id === staffId);
+    if (!staff || staff.status === nextStatus) return;
+
+    const previousStatus = staff.status;
+
+    // optimistic update
+    patchLocalStaff(groupId, staffId, { status: nextStatus });
+    setSavingIds((prev) => new Set(prev).add(staffId));
+    setStatusError(null);
+
+    try {
+      await changeUserStatus(staffId, { status: toApiStatus(nextStatus) });
+    } catch (err) {
+      // rollback
+      patchLocalStaff(groupId, staffId, { status: previousStatus });
+      setStatusError(
+        err instanceof Error
+          ? err.message
+          : "Failed to update status. Please try again."
+      );
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(staffId);
+        return next;
+      });
+    }
   }
 
   return (
@@ -134,6 +176,12 @@ export default function UserManagementPage() {
           )}
         </div>
 
+        {statusError && (
+          <div className="mx-6 mt-4 rounded-md border border-[#F3C6C6] bg-[#FDF2F2] px-4 py-2 text-[13px] font-medium text-[#B3261E]">
+            {statusError}
+          </div>
+        )}
+
         {/* Loading state */}
         {loading && (
           <div className="flex flex-col gap-3 px-6 py-10">
@@ -147,7 +195,7 @@ export default function UserManagementPage() {
           </div>
         )}
 
-        {/* No data state — covers both "API not reachable" and "API responded with nothing" */}
+        {/* No data state */}
         {!loading && (error || groups.length === 0) && (
           <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F1F2F4] text-[#9AA0A8]">
@@ -159,7 +207,7 @@ export default function UserManagementPage() {
             <p className="max-w-sm text-[13px] text-[#9AA0A8]">
               {error
                 ? "We couldn't reach the server just now. Once the API is connected, institutions and staff will appear here automatically."
-                : "Once institutions and staff are added, they'll appear here grouped by institution."}
+                : "Once staff are added for this institution, they'll appear here."}
             </p>
             <button
               onClick={loadData}
@@ -170,7 +218,7 @@ export default function UserManagementPage() {
           </div>
         )}
 
-        {/* Groups: one title + column set per institution, entirely data-driven */}
+        {/* Groups */}
         {!loading && !error && groups.length > 0 && (
           <div className="flex flex-col px-6 pb-10">
             {groups.map((group) => (
@@ -206,57 +254,63 @@ export default function UserManagementPage() {
                           </td>
                         </tr>
                       )}
-                      {group.staff.map((s) => (
-                        <tr key={s.id} className="border-t border-[#F1F2F4]">
-                          <td className="py-3 text-[14px] font-semibold text-[#111318]">
-                            {s.staffId}
-                          </td>
-                          <td className="py-3 text-[14px] font-semibold text-[#111318]">
-                            {s.firstName}
-                          </td>
-                          <td className="py-3 text-[14px] font-semibold text-[#111318]">
-                            {s.lastName}
-                          </td>
-                          <td className="py-3 text-[14px] font-semibold text-[#111318]">
-                            {s.username}
-                          </td>
-                          <td className="py-3 text-[14px] font-semibold text-[#111318]">
-                            {s.number}
-                          </td>
-                          <td className="py-3 text-[14px]">
-                            <a
-                              href={`mailto:${s.email}`}
-                              className="font-semibold text-[#111318] underline decoration-[#111318]/40 underline-offset-2 hover:decoration-[#111318]"
-                            >
-                              {s.email}
-                            </a>
-                          </td>
-                          <td className="py-3 text-[14px] font-semibold text-[#111318]">
-                            {s.roleName}
-                          </td>
-                          <td className="py-3">
-                            <div className="relative inline-block">
-                              <select
-                                value={s.status}
-                                onChange={(e) =>
-                                  updateStaff(group.id, s.id, {
-                                    status: e.target.value as Status,
-                                  })
-                                }
-                                className={`appearance-none rounded-md bg-transparent pr-5 text-[14px] font-semibold outline-none ${
-                                  s.status === "active"
-                                    ? "text-[#1AAE6F]"
-                                    : "text-[#B0B4BA]"
-                                }`}
+                      {group.staff.map((s) => {
+                        const isSaving = savingIds.has(s.id);
+                        return (
+                          <tr key={s.id} className="border-t border-[#F1F2F4]">
+                            <td className="py-3 text-[14px] font-semibold text-[#111318]">
+                              {s.staffId}
+                            </td>
+                            <td className="py-3 text-[14px] font-semibold text-[#111318]">
+                              {s.firstName}
+                            </td>
+                            <td className="py-3 text-[14px] font-semibold text-[#111318]">
+                              {s.lastName}
+                            </td>
+                            <td className="py-3 text-[14px] font-semibold text-[#111318]">
+                              {s.username}
+                            </td>
+                            <td className="py-3 text-[14px] font-semibold text-[#111318]">
+                              {s.number}
+                            </td>
+                            <td className="py-3 text-[14px]">
+                              <a
+                                href={`mailto:${s.email}`}
+                                className="font-semibold text-[#111318] underline decoration-[#111318]/40 underline-offset-2 hover:decoration-[#111318]"
                               >
-                                <option value="active">active</option>
-                                <option value="inactive">inactive</option>
-                              </select>
-                              <ChevronIcon className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-current" />
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                                {s.email}
+                              </a>
+                            </td>
+                            <td className="py-3 text-[14px] font-semibold text-[#111318]">
+                              {s.roleName}
+                            </td>
+                            <td className="py-3">
+                              <div className="relative inline-block">
+                                <select
+                                  value={s.status}
+                                  disabled={isSaving}
+                                  onChange={(e) =>
+                                    updateStaffStatus(
+                                      group.id,
+                                      s.id,
+                                      e.target.value as Status
+                                    )
+                                  }
+                                  className={`appearance-none rounded-md bg-transparent pr-5 text-[14px] font-semibold outline-none disabled:opacity-50 ${
+                                    s.status === "active"
+                                      ? "text-[#1AAE6F]"
+                                      : "text-[#B0B4BA]"
+                                  }`}
+                                >
+                                  <option value="active">active</option>
+                                  <option value="inactive">inactive</option>
+                                </select>
+                                <ChevronIcon className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-current" />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -13,7 +13,7 @@ export const ApiEndpoint = {
   // --------------------- SUPER ADMIN ---------------------
 
   PATCH_CHANGED_ROLE_ADMIN: (id: number | string) => `/api/v1/protected/change-role-admin/${id}`,
-  PATCH_CHANGED_USER_STATUS: (id: number | string) => `/api/v1/protected/user/${id}/status"`,
+  PATCH_CHANGED_USER_STATUS: (id: number | string) => `/api/v1/protected/user/${id}/status`,
 
   GET_ALL_INSTITUTION_BY_SUPER_ADMIN: "api/v1/public/institution/get",
   GET_USER_BY_INSTI_SA: (institutionId: number | string) => `/api/v1/protected/users/${institutionId}`,
