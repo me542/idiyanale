@@ -10,42 +10,30 @@ export type WorkInfo = {
   staffId: string;
   firstName: string;
   lastName: string;
-  contactNumber: string;
   email: string;
   institution: string;
   position: string;
   role: string;
 };
 
-export type UnitInfo = {
-  laptop: string;
-  serialNumber: string;
-  macAddress: string;
-  ipAddress: string;
-};
-
 export function InformationPanel({
   activeNav,
   workInfo,
-  unitInfo,
   kpi,
   minorTasks,
   onSave,
 }: {
   activeNav: NavKey;
   workInfo: WorkInfo;
-  unitInfo: UnitInfo;
   kpi: TicketKpiData;
   minorTasks?: MinorTaskItem[];
-  /** Called when the user confirms their edits (Save button). */
-  onSave?: (workInfo: WorkInfo, unitInfo: UnitInfo) => void;
+  onSave?: (workInfo: WorkInfo) => void;
 }) {
   if (activeNav === "work") {
     return (
       <div className="min-h-[680px] w-full flex-1 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <WorkInformationView
           workInfo={workInfo}
-          unitInfo={unitInfo}
           onSave={onSave}
         />
       </div>
@@ -62,24 +50,19 @@ export function InformationPanel({
 
 function WorkInformationView({
   workInfo,
-  unitInfo,
   onSave,
 }: {
   workInfo: WorkInfo;
-  unitInfo: UnitInfo;
-  onSave?: (workInfo: WorkInfo, unitInfo: UnitInfo) => void;
+  onSave?: (workInfo: WorkInfo) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [formWork, setFormWork] = useState<WorkInfo>(workInfo);
-  const [formUnit, setFormUnit] = useState<UnitInfo>(unitInfo);
 
   const handleEditClick = () => setShowConfirm(true);
 
   const confirmEdit = () => {
-    // start editing from the latest known values
     setFormWork(workInfo);
-    setFormUnit(unitInfo);
     setIsEditing(true);
     setShowConfirm(false);
   };
@@ -88,20 +71,16 @@ function WorkInformationView({
 
   const handleCancelEdit = () => {
     setFormWork(workInfo);
-    setFormUnit(unitInfo);
     setIsEditing(false);
   };
 
   const handleSave = () => {
-    onSave?.(formWork, formUnit);
+    onSave?.(formWork);
     setIsEditing(false);
   };
 
   const updateWorkField = (field: keyof WorkInfo, value: string) =>
     setFormWork((prev) => ({ ...prev, [field]: value }));
-
-  const updateUnitField = (field: keyof UnitInfo, value: string) =>
-    setFormUnit((prev) => ({ ...prev, [field]: value }));
 
   return (
     <div>
@@ -129,6 +108,7 @@ function WorkInformationView({
             >
               <X size={24} strokeWidth={1.75} />
             </button>
+
             <button
               type="button"
               onClick={handleSave}
@@ -148,42 +128,43 @@ function WorkInformationView({
           isEditing={isEditing}
           onChange={(v) => updateWorkField("staffId", v)}
         />
+
         <InfoRow
           label="First name"
           value={formWork.firstName}
           isEditing={isEditing}
           onChange={(v) => updateWorkField("firstName", v)}
         />
+
         <InfoRow
           label="Last name"
           value={formWork.lastName}
           isEditing={isEditing}
           onChange={(v) => updateWorkField("lastName", v)}
         />
-        <InfoRow
-          label="Contact Number"
-          value={formWork.contactNumber}
-          isEditing={isEditing}
-          onChange={(v) => updateWorkField("contactNumber", v)}
-        />
+
+
         <InfoRow
           label="Email"
           value={formWork.email}
           isEditing={isEditing}
           onChange={(v) => updateWorkField("email", v)}
         />
+
         <InfoRow
           label="Institution"
           value={formWork.institution}
           isEditing={isEditing}
           onChange={(v) => updateWorkField("institution", v)}
         />
+
         <InfoRow
           label="Position"
           value={formWork.position}
           isEditing={isEditing}
           onChange={(v) => updateWorkField("position", v)}
         />
+
         <InfoRow
           label="Role"
           value={formWork.role}
@@ -192,39 +173,11 @@ function WorkInformationView({
         />
       </dl>
 
-      <h3 className="mt-10 text-lg font-semibold text-slate-800">
-        Unit Information
-      </h3>
-
-      <dl className="mt-6 space-y-4">
-        <InfoRow
-          label="Laptop"
-          value={formUnit.laptop}
-          isEditing={isEditing}
-          onChange={(v) => updateUnitField("laptop", v)}
-        />
-        <InfoRow
-          label="Serial Number"
-          value={formUnit.serialNumber}
-          isEditing={isEditing}
-          onChange={(v) => updateUnitField("serialNumber", v)}
-        />
-        <InfoRow
-          label="MAC Address"
-          value={formUnit.macAddress}
-          isEditing={isEditing}
-          onChange={(v) => updateUnitField("macAddress", v)}
-        />
-        <InfoRow
-          label="IP Address"
-          value={formUnit.ipAddress}
-          isEditing={isEditing}
-          onChange={(v) => updateUnitField("ipAddress", v)}
-        />
-      </dl>
-
       {showConfirm && (
-        <ConfirmEditModal onConfirm={confirmEdit} onCancel={cancelConfirm} />
+        <ConfirmEditModal
+          onConfirm={confirmEdit}
+          onCancel={cancelConfirm}
+        />
       )}
     </div>
   );
@@ -247,6 +200,7 @@ function InfoRow({
         <dt className="w-40 shrink-0 font-semibold text-slate-400">
           {label}:
         </dt>
+
         <dd className="flex-1">
           <input
             type="text"
@@ -262,7 +216,9 @@ function InfoRow({
   return (
     <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
       <dt className="font-semibold text-slate-400">{label}:</dt>
-      <dd className="font-medium text-slate-600">{value || "—"}</dd>
+      <dd className="font-medium text-slate-600">
+        {value || "—"}
+      </dd>
     </div>
   );
 }
@@ -280,9 +236,11 @@ function ConfirmEditModal({
         <h3 className="text-base font-semibold text-slate-800">
           Edit Information?
         </h3>
+
         <p className="mt-2 text-sm text-slate-500">
           You&apos;re about to edit this record. Do you want to continue?
         </p>
+
         <div className="mt-6 flex justify-end gap-3">
           <button
             type="button"
@@ -291,6 +249,7 @@ function ConfirmEditModal({
           >
             Cancel
           </button>
+
           <button
             type="button"
             onClick={onConfirm}

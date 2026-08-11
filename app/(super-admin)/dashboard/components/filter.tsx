@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { getInstitutions } from '../../management/institution/api/get-insti'; // adjust path to wherever you place get-insti.ts
+import { getInstitutions } from '../../../../services/integration/institution/get-all-insti'; // adjust path to wherever you place get-insti.ts
 
 interface FilterProps {
   onFilterChange?: (filters: {

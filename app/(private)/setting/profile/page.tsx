@@ -4,35 +4,20 @@ import { useState } from "react";
 import {
   ProfileSidebar,
   type NavKey,
-  type ProfileUser,
 } from "./components/profile-option";
 import {
   InformationPanel,
   type WorkInfo,
-  type UnitInfo,
 } from "./components/information";
-
-const user: ProfileUser = {
-  name: "",
-  company: "",
-};
 
 const workInfo: WorkInfo = {
   staffId: "",
   firstName: "",
   lastName: "",
-  contactNumber: "",
   email: "",
   institution: "",
   position: "",
   role: "",
-};
-
-const unitInfo: UnitInfo = {
-  laptop: "",
-  serialNumber: "",
-  macAddress: "",
-  ipAddress: "",
 };
 
 const kpi = {
@@ -48,7 +33,6 @@ export default function Page() {
     <div className="min-h-screen bg-slate-50">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <ProfileSidebar
-          user={user}
           activeNav={activeNav}
           onSelectNav={setActiveNav}
           themeOn={themeOn}
@@ -57,7 +41,6 @@ export default function Page() {
         <InformationPanel
           activeNav={activeNav}
           workInfo={workInfo}
-          unitInfo={unitInfo}
           kpi={kpi}
         />
       </div>

@@ -68,10 +68,21 @@ export const ApiEndpoint = {
 
   // --------------------- TICKET ----------------------------
   POST_CREATE_TICKET: "/api/v1/ticket/create",
-  POST_PROCESS_TICKET: (ticketId: number | string) => `/api/v1/ticket/${ticketId}/process}`,
+  POST_PROCESS_TICKET: (ticketId: string | number) => `/api/v1/ticket/${ticketId}/process`,
+
+  PATCH_UPDATE_TICKET: (ticketId: string | number) =>`/api/v1/ticket/update/${ticketId}`,
 
   GET_ALL_TICKET: "/api/v1/ticket/all",
+  GET_ALL_TICKET_BY_INSTI: (institutionId: number | string) => `/api/v1/ticket/get/by-institution/${institutionId}`,
   GET_TICKET_BY_TICKETID: (ticketId: number | string) => `/api/v1/ticket/get/${ticketId}`,
+
+  // --------------------- REMARKS ----------------------------
+
+  POST_REMARKS: "/api/v1/remarks/add-options",
+
+  GET_REMARKS: "/api/v1/remarks/get",
+
+  PATCH_REMARKS: "/api/v1/remarks/edit",
 
   // --------------------- PROJECT ---------------------------\
 

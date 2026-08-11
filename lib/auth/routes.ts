@@ -1,4 +1,4 @@
-import type { Permissions } from "./jwt";
+import type { Permissions } from "./verify-jwt";
 
 export interface AppRoute {
   path: string;

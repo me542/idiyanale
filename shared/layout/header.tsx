@@ -52,7 +52,12 @@ export default function Header() {
       : "User";
 
   const displayRole = isStaff && currentUser?.data.role ? currentUser.data.role.role_name : "";
-  const displayInstitution = isStaff && currentUser ? currentUser.data.institution_id ?? "" : "";
+
+  // institution is a nested object on the User type: { institution_id, institution_code, institution_name }
+  const displayInstitution = isStaff && currentUser
+    ? currentUser.data.institution?.institution_name ?? ""
+    : "";
+
   const displayStaffId = isStaff && currentUser ? currentUser.data.staff_id ?? "" : "";
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -96,7 +101,9 @@ export default function Header() {
     const breadcrumbs: Breadcrumb[] = [
       {
         href: "/",
-        label: "Home",
+        // Show the logged-in staff user's institution instead of a static "Home" label.
+        // Falls back to "Home" for super-admins or while currentUser is still loading.
+        label: isStaff && displayInstitution ? displayInstitution : "Home",
         isLast: paths.length === 0,
         isClickable: false // Home is always clickable
       }

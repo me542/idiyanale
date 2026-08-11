@@ -11,6 +11,12 @@ export interface Role {
   can_audit: boolean;
 }
 
+export interface Institution {
+  institution_id: number;
+  institution_code: string;
+  institution_name: string;
+}
+
 export interface User {
   id: number;
   username: string;
@@ -19,7 +25,9 @@ export interface User {
   last_name: string;
   email: string;
   phone_no: string;
-  institution_id: number;
+
+  institution: Institution;
+
   job_position_id: number;
   role: Role;
   status: string;
@@ -34,3 +42,4 @@ export async function getUserById(id: number | string) {
     { unwrap: true }
   );
 }
+

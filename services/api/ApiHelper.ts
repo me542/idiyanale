@@ -234,3 +234,10 @@ export function del<T>(
   return request<T>("DELETE", endpoint, undefined, options);
 }
 
+export function patchForm<T>(
+  endpoint: string,
+  formData: FormData,
+  options?: Options
+): Promise<T> {
+  return request<T>("PATCH", endpoint, formData, options);
+}

@@ -18,7 +18,7 @@ export default function DashboardPage() {
         <MyTicket tickets={[]} />
 
         <div className="flex flex-col gap-5">
-          <DueActivity activities={[]} />
+          <DueActivity />
           <ByCategory categories={[]} />
         </div>
       </div>

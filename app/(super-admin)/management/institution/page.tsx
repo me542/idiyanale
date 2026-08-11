@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createInstitution } from "./api/create-insti"; // adjust path to wherever you place create-insti.ts
-import { getInstitutions, InstitutionResp } from "./api/get-insti"; // adjust path to wherever you place get-insti.ts
-import { editInstitution } from "./api/edit-insti"; // adjust path to wherever you place edit-insti.ts
+import { createInstitution } from "../../../../services/integration/institution/post-insti"; // adjust path to wherever you place create-insti.ts
+import { getInstitutions, InstitutionResp } from "../../../../services/integration/institution/get-all-insti"; // adjust path to wherever you place get-insti.ts
+import { editInstitution } from "../../../../services/integration/institution/post-edit-insti-id"; // adjust path to wherever you place edit-insti.ts
 
 type Status = "active" | "inactive";
 

@@ -31,7 +31,7 @@ export function ProfileSidebar({
       if (current.kind === "staff") {
         setUser({
           name: `${current.data.first_name} ${current.data.last_name}`,
-          company: String(current.data.institution_id ?? ""),
+          company: current.data.institution?.institution_name ?? "",
           initial: current.data.first_name?.charAt(0) ?? "",
         });
       } else {
@@ -46,7 +46,11 @@ export function ProfileSidebar({
     loadUser();
   }, []);
 
-  const initial = (user.initial || user.name.charAt(0) || "?").toUpperCase();
+  const initial = (
+    user.initial ||
+    user.name.charAt(0) ||
+    "?"
+  ).toUpperCase();
 
   return (
     <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -60,6 +64,7 @@ export function ProfileSidebar({
           <p className="truncate text-base font-semibold text-slate-800">
             {user.name}
           </p>
+
           <p className="truncate text-xs font-medium text-slate-400">
             {user.company}
           </p>
@@ -88,7 +93,11 @@ export function ProfileSidebar({
         <span className="text-sm font-medium text-slate-500">
           Theme Mode:
         </span>
-        <ThemeSwitch checked={themeOn} onChange={onToggleTheme} />
+
+        <ThemeSwitch
+          checked={themeOn}
+          onChange={onToggleTheme}
+        />
       </div>
     </div>
   );
@@ -115,7 +124,10 @@ function NavButton({
           : "text-slate-400 hover:bg-slate-50 hover:text-slate-600"
       }`}
     >
-      <span className={active ? "text-white" : "text-slate-400"}>{icon}</span>
+      <span className={active ? "text-white" : "text-slate-400"}>
+        {icon}
+      </span>
+
       {label}
     </button>
   );

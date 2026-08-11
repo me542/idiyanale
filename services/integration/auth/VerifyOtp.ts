@@ -1,11 +1,12 @@
 import { post } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
-import { decodeToken, extractPermissions } from "@/lib/auth/jwt";
+import { verifyJWT, JwtPayload } from "@/lib/auth/verify-jwt";
 
 interface VerifyOtpResponse {
   response?: {
     token: string;
   };
+
   message?: string;
   ret_code?: string;
 }
@@ -16,21 +17,34 @@ interface VerifyOtpResult {
   retCode?: string;
 }
 
-function persistSession(token: string) {
-  const claims = decodeToken(token);
+async function persistSession(token: string) {
+  // Verify the JWT signature and claims
+  const claims = await verifyJWT(token);
+
   if (!claims) {
     throw new Error("Received an invalid or expired token");
   }
 
   localStorage.setItem("token", token);
-  localStorage.setItem("role", claims.role);
+
+  localStorage.setItem("role", claims.role ?? "");
+
   localStorage.setItem(
     "permissions",
-    JSON.stringify(extractPermissions(claims))
+    JSON.stringify({
+      can_create: claims.can_create ?? false,
+      can_endorse: claims.can_endorse ?? false,
+      can_approve: claims.can_approve ?? false,
+      can_resolve: claims.can_resolve ?? false,
+      can_audit: claims.can_audit ?? false,
+    })
   );
 
   if (claims.institution_id !== undefined) {
-    localStorage.setItem("institution_id", String(claims.institution_id));
+    localStorage.setItem(
+      "institution_id",
+      String(claims.institution_id)
+    );
   }
 
   localStorage.setItem(
@@ -43,6 +57,7 @@ function persistSession(token: string) {
   );
 
   const maxAge = 60 * 60;
+
   document.cookie = `token=${token}; path=/; max-age=${maxAge}; samesite=lax`;
   document.cookie = `role=staff; path=/; max-age=${maxAge}; samesite=lax`;
 }
@@ -66,7 +81,8 @@ export const verifyOTP = async (
     throw new Error(res.message || "Invalid OTP");
   }
 
-  persistSession(token);
+  // Verify JWT before creating the session
+  await persistSession(token);
 
   return {
     token,
