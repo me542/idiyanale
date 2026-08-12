@@ -17,11 +17,6 @@ export interface UserInstitution {
   institution_name: string;
 }
 
-export interface UserJobPosition {
-  position_id: number;
-  position_name: string;
-}
-
 export interface UserDetails {
   id: number;
   username: string;
@@ -32,7 +27,7 @@ export interface UserDetails {
   phone_no: string;
   institution_id: number;
   institution: UserInstitution;
-  job_positions: UserJobPosition;
+  job_position_id: number;
   role: UserRole;
   status: string;
   last_login?: string;
@@ -40,16 +35,16 @@ export interface UserDetails {
   created_at: string;
 }
 
-export interface GetUsersByInstitutionResponse {
-  response?: UserDetails[];
+export interface GetUserByIDResponse {
+  response?: UserDetails;
   message?: string;
   ret_code?: string;
 }
 
-export const getUsersByInstitution = async (
-  institutionId: number | string
-): Promise<GetUsersByInstitutionResponse> => {
-  return get<GetUsersByInstitutionResponse>(
-    ApiEndpoint.GET_USER_BY_INSTI_U(institutionId)
+export const getUserByID = async (
+  id: number | string
+): Promise<GetUserByIDResponse> => {
+  return get<GetUserByIDResponse>(
+    ApiEndpoint.GET_USER_BY_ID_U(id)
   );
 };

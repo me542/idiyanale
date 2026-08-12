@@ -1,32 +1,37 @@
-// edit-insti.ts
-import { postForm } from "@/services/api/ApiHelper";
+import { post } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
-export type EditInstitutionPayload = {
+export interface EditInstitutionRequest {
   institution_code: string;
   institution_name: string;
   description: string;
-  institution_color?: string; // must be "#fff" or "#ffffff" — validated server-side too
+  institution_color: string;
   logo?: File | null;
-};
-
-export function editInstitution(
-  institutionId: number | string,
-  payload: EditInstitutionPayload
-) {
-  const formData = new FormData();
-  formData.append("institution_code", payload.institution_code);
-  formData.append("institution_name", payload.institution_name);
-  formData.append("description", payload.description);
-
-  if (payload.institution_color) {
-    formData.append("institution_color", payload.institution_color);
-  }
-  if (payload.logo) {
-    formData.append("logo", payload.logo);
-  }
-
-  return postForm(ApiEndpoint.POST_EDIT_INSTI(institutionId), formData, {
-    unwrap: true,
-  });
 }
+
+export interface EditInstitutionResponse {
+  message?: string;
+  ret_code?: string;
+  response?: unknown;
+}
+
+export const editInstitution = async (
+  institutionId: number | string,
+  data: EditInstitutionRequest
+): Promise<EditInstitutionResponse> => {
+  const formData = new FormData();
+
+  formData.append("institution_code", data.institution_code);
+  formData.append("institution_name", data.institution_name);
+  formData.append("description", data.description);
+  formData.append("institution_color", data.institution_color);
+
+  if (data.logo) {
+    formData.append("logo", data.logo);
+  }
+
+  return post<EditInstitutionResponse>(
+    ApiEndpoint.POST_EDIT_INSTI_BY_ID(institutionId),
+    formData
+  );
+};

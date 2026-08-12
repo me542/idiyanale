@@ -11,20 +11,17 @@ export const ApiEndpoint = {
   getAllUsers: `/api/v1/protected/get-all-users`,
 
   // --------------------- SUPER ADMIN ---------------------
-
   PATCH_CHANGED_ROLE_ADMIN: (id: number | string) => `/api/v1/protected/change-role-admin/${id}`,
   PATCH_CHANGED_USER_STATUS: (id: number | string) => `/api/v1/protected/user/${id}/status`,
 
-  GET_ALL_INSTITUTION_BY_SUPER_ADMIN: "api/v1/public/institution/get",
+  GET_SUPER_ADMIN_BY_ID: (id: number | string) => `/api/v1/protected/get-super-admin/${id}`,
   GET_USER_BY_INSTI_SA: (institutionId: number | string) => `/api/v1/protected/users/${institutionId}`,
   GET_POSITION_BY_INSTI: (institutionId: number | string) => `/api/v1/protected/job-positions/${institutionId}`,
-  GET_SUPER_ADMIN_BY_ID: (id: number | string) => `/api/v1/protected/get-super-admin/${id}`,
 
   POST_SUPER_ADMIN: "/api/v1/public/register/super-admin",
 
   // --------------------- INSTI ADMIN ---------------------
-
-  GET_USERS_BY_INSTITUTION_ID: (institutionId: number | string) => `/api/v1/protected/users/institution/${institutionId}`,
+  GET_USER_BY_ID: `/api/v1/protected/get-user`,
   GET_POSITION_BY_INSTITUTION: "/api/v1/protected/job-positions-by-institution",
   GET_TICKET_TYPE: "/api/v1/protected/get-ticket-types",
   GET_CATEGORY: (ticketTypeId: number | string) => `/api/v1/protected/get-categories/${ticketTypeId}`,
@@ -59,25 +56,29 @@ export const ApiEndpoint = {
 
   // --------------------- INSTITUTION ----------------------
   POST_ADD_INSTI: "/api/v1/institution/create",
-  POST_EDIT_INSTI: (institutionId: number | string) => `/api/v1/institution/edit/${institutionId}`,
-  POST_ALLOW_INSTI_TICKET: "/api/v1/institution/allow-institution-ticket",
+  POST_EDIT_INSTI_BY_ID: (institutionId: number | string) => `/api/v1/institution/edit/${institutionId}`,
+  POST_SET_ALLOW_INSTI_TICKET: "/api/v1/institution/allow-institution-ticket",
+  POST_CREATE_RESOLVER_GROUP: "/api/v1/institution/create-resolver-group",
+
+  PUT_UPDATE_RESOLVER_GROUP: (resolverGroupId: number | string) => `/api/v1/institution/resolver-groups/${resolverGroupId}`,
 
   GET_ALL_INSTITUTIONS: "/api/v1/institution/get",
+  GET_RESOLVER_GROUPS: "/api/v1/institution/resolver-groups",
+  GET_INSTI_BY_ID_RESOLVER_GROUP: (institutionId: number | string) => `/api/v1/institution/${institutionId}/resolver-groups`,
 
-  PATCH_CHANGED_INSTI_STATUS: (institutionId: number | string) => `/api/v1/institution/change-status/${institutionId}`,
+  PATCH_CHANGED_STATUS_INSTI_ID: (institutionId: number | string) => `/api/v1/institution/change-status/${institutionId}`,
 
   // --------------------- TICKET ----------------------------
   POST_CREATE_TICKET: "/api/v1/ticket/create",
   POST_PROCESS_TICKET: (ticketId: string | number) => `/api/v1/ticket/${ticketId}/process`,
 
   PATCH_UPDATE_TICKET: (ticketId: string | number) =>`/api/v1/ticket/update/${ticketId}`,
-
+  
   GET_ALL_TICKET: "/api/v1/ticket/all",
   GET_ALL_TICKET_BY_INSTI: (institutionId: number | string) => `/api/v1/ticket/get/by-institution/${institutionId}`,
   GET_TICKET_BY_TICKETID: (ticketId: number | string) => `/api/v1/ticket/get/${ticketId}`,
-
+  
   // --------------------- REMARKS ----------------------------
-
   POST_REMARKS: "/api/v1/remarks/add-options",
 
   GET_REMARKS: "/api/v1/remarks/get",

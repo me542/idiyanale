@@ -1,20 +1,23 @@
-// get-insti.ts
 import { get } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
-export type InstitutionResp = {
+export interface InstitutionResp {
   institution_id: number;
   institution_code: string;
   institution_name: string;
   description: string;
-  status: "active" | "inactive";
-  createdAt: string;
-};
-
-// unwrap:true pulls data.response out for you (see ApiHelper.handleResponse),
-// so this resolves directly to the array — no res.data indirection needed.
-export function getInstitutions() {
-  return get<InstitutionResp[]>(ApiEndpoint.GET_ALL_INSTITUTIONS, {
-    unwrap: true,
-  });
+  status: string;
+  created_at: string | null;
 }
+
+export interface GetInstitutionsResponse {
+  message?: string;
+  ret_code?: string;
+  response?: InstitutionResp[];
+}
+
+export const getInstitutions = async (): Promise<GetInstitutionsResponse> => {
+  return get<GetInstitutionsResponse>(
+    ApiEndpoint.GET_ALL_INSTITUTIONS
+  );
+};

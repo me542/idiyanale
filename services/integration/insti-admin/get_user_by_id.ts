@@ -1,7 +1,13 @@
 import { get } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
-export interface UserRole {
+export interface InstitutionResp {
+  institution_id: number;
+  institution_code: string;
+  institution_name: string;
+}
+
+export interface RoleResp {
   role_id: number;
   role_name: string;
   can_create: boolean;
@@ -11,18 +17,12 @@ export interface UserRole {
   can_audit: boolean;
 }
 
-export interface UserInstitution {
-  institution_id: number;
-  institution_code: string;
-  institution_name: string;
-}
-
-export interface UserJobPosition {
+export interface JobPositionResp {
   position_id: number;
   position_name: string;
 }
 
-export interface UserDetails {
+export interface UserDetailsResp {
   id: number;
   username: string;
   staff_id: string;
@@ -31,25 +31,25 @@ export interface UserDetails {
   email: string;
   phone_no: string;
   institution_id: number;
-  institution: UserInstitution;
-  job_positions: UserJobPosition;
-  role: UserRole;
+  institution: InstitutionResp;
+  job_positions: JobPositionResp;
+  role: RoleResp;
   status: string;
-  last_login?: string;
+  last_login: string;
   is_logged_in: boolean;
   created_at: string;
 }
 
 export interface GetUsersByInstitutionResponse {
-  response?: UserDetails[];
+  response?: UserDetailsResp[];
   message?: string;
   ret_code?: string;
 }
 
-export const getUsersByInstitution = async (
-  institutionId: number | string
+export const getUsersByInstitutionID = async (
+  institutionID: number | string
 ): Promise<GetUsersByInstitutionResponse> => {
-  return get<GetUsersByInstitutionResponse>(
-    ApiEndpoint.GET_USER_BY_INSTI_U(institutionId)
+  return get(
+    `${ApiEndpoint.GET_USER_BY_ID}/${institutionID}`
   );
 };
