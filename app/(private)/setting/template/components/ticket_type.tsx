@@ -3,6 +3,17 @@
 import { FieldRow, SelectField, ManagePopover } from "./ui";
 import type { TicketType } from "./types";
 
+interface TicketTypeFieldProps {
+  ticketTypes: TicketType[];
+  loading: boolean;
+  selectedTicketType: TicketType | null;
+
+  onSelect: (id: string) => void;
+  onAdd: (name: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+}
+
 export function TicketTypeField({
   ticketTypes,
   loading,
@@ -11,27 +22,30 @@ export function TicketTypeField({
   onAdd,
   onRename,
   onDelete,
-}: {
-  ticketTypes: TicketType[];
-  loading: boolean;
-  selectedTicketType: TicketType | null;
-  onSelect: (id: string) => void;
-  onAdd: (name: string) => void;
-  onRename: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
-}) {
+}: TicketTypeFieldProps) {
   return (
     <FieldRow label="Ticket Type">
       <SelectField
-        placeholder={loading ? "Loading..." : "Select ticket type"}
+        placeholder={
+          loading
+            ? "Loading..."
+            : "Select ticket type"
+        }
         value={selectedTicketType?.name ?? ""}
         disabled={loading}
-        options={ticketTypes.map((t) => ({ id: t.id, label: t.name }))}
+        options={ticketTypes.map((ticketType) => ({
+          id: ticketType.id,
+          label: ticketType.name,
+        }))}
         onSelect={onSelect}
       />
+
       <ManagePopover
         title="Manage ticket types"
-        items={ticketTypes.map((t) => ({ id: t.id, label: t.name }))}
+        items={ticketTypes.map((ticketType) => ({
+          id: ticketType.id,
+          label: ticketType.name,
+        }))}
         addPlaceholder="New ticket type name"
         onAdd={onAdd}
         onRename={onRename}

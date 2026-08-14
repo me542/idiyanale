@@ -56,21 +56,21 @@ export interface InstitutionTicket {
   submitter_id: number;
   submitter: TicketUser;
 
-  resolver_id: number;
-  resolver: TicketUser;
+  resolver_id: number | null;
+  resolver: TicketUser | null;
 
-  endorser_id: number;
-  endorser: TicketUser;
+  endorser_id: number | null;
+  endorser: TicketUser | null;
 
-  approver_id: number;
-  approver: TicketUser;
+  approver_id: number | null;
+  approver: TicketUser | null;
 
   status: string;
   created_at: string;
   updated_at: string;
 
-  cancelled_by: number;
-  canceller: TicketUser;
+  cancelled_by: number | null;
+  canceller: TicketUser | null;
   cancelled_at: string | null;
 
   started_at: string | null;
@@ -81,8 +81,8 @@ export interface InstitutionTicket {
   onhold: boolean;
   hold_at: string | null;
 
-  closed_by: number;
-  closer: TicketUser;
+  closed_by: number | null;
+  closer: TicketUser | null;
   closed_at: string | null;
 
   endorsed_at: string | null;

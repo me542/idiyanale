@@ -1,10 +1,13 @@
-import type { Permissions } from "./verify-jwt";
+export interface PermissionState {
+  canAudit: boolean;
+  [key: string]: boolean;
+}
 
 export interface AppRoute {
   path: string;
   title: string;
   clickable: boolean;
-  permission?: (p: Permissions) => boolean;
+  permission?: (p: PermissionState) => boolean;
 }
 
 export const ROUTES: AppRoute[] = [

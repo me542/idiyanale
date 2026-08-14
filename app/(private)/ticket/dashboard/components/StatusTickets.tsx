@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTickets, TicketResponse } from "./../api/get_ticket";
+import {
+  getAllTicketsByInstitution,
+  InstitutionTicket,
+} from "@/services/integration/ticket/get_all_ticket_by_insti";
 import { StatusCounts } from "./types";
 
 const DEFAULT: StatusCounts = {
@@ -13,28 +16,50 @@ const DEFAULT: StatusCounts = {
   cancelled: 0,
 };
 
-// 👇 adjust these keys to match your real backend status values
-const STATUS_MAP: Record<string, keyof Omit<StatusCounts, "total">> = {
+// Adjust these according to your actual backend status values.
+const STATUS_MAP: Record<
+  string,
+  keyof Omit<StatusCounts, "total">
+> = {
   forreview: "forReview",
   forresolution: "forReview",
-  forassignment: "forReview",     
+  forassignment: "forReview",
+  forendorsement: "forReview",
+  endorsed: "forReview",
+  forapproval: "forReview",
+  approved: "forReview",
+
   inprogress: "inProgress",
+
   resolved: "resolved",
+
   closed: "closed",
+
   cancelled: "cancelled",
   canceled: "cancelled",
 };
 
 function normalizeStatus(status: string): string {
-  return status.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  return status
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
 }
 
-function getStatusCounts(tickets: TicketResponse[]): StatusCounts {
-  const counts: StatusCounts = { ...DEFAULT, total: tickets.length };
+function getStatusCounts(
+  tickets: InstitutionTicket[]
+): StatusCounts {
+  const counts: StatusCounts = {
+    ...DEFAULT,
+    total: tickets.length,
+  };
 
   for (const ticket of tickets) {
     const key = STATUS_MAP[normalizeStatus(ticket.status)];
-    if (key) counts[key] += 1;
+
+    if (key) {
+      counts[key] += 1;
+    }
   }
 
   return counts;
@@ -47,16 +72,44 @@ export default function StatusTickets() {
   useEffect(() => {
     let cancelled = false;
 
-    getTickets()
-      .then((tickets) => {
-        if (!cancelled) setData(getStatusCounts(tickets));
-      })
-      .catch((err) => {
-        console.error("Failed to load tickets:", err);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    async function loadTickets() {
+      try {
+        const storedInstitutionId =
+          localStorage.getItem("institution_id");
+
+        if (!storedInstitutionId) {
+          throw new Error("Institution ID not found.");
+        }
+
+        const institutionId = Number(storedInstitutionId);
+
+        if (!Number.isInteger(institutionId) || institutionId <= 0) {
+          throw new Error("Invalid institution ID.");
+        }
+
+        const tickets =
+          await getAllTicketsByInstitution(institutionId);
+
+        if (cancelled) return;
+
+        setData(getStatusCounts(tickets));
+      } catch (err) {
+        if (!cancelled) {
+          console.error(
+            "Failed to load institution tickets:",
+            err
+          );
+
+          setData(DEFAULT);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadTickets();
 
     return () => {
       cancelled = true;
@@ -64,12 +117,36 @@ export default function StatusTickets() {
   }, []);
 
   const items = [
-    { label: "Total Ticket", value: data.total, color: "#4E86F0" },
-    { label: "For Review", value: data.forReview, color: "#F0B429" },
-    { label: "In Progress", value: data.inProgress, color: "#8B6BF0" },
-    { label: "Resolved", value: data.resolved, color: "#2FBF87" },
-    { label: "Closed", value: data.closed, color: "#8C97A0" },
-    { label: "Cancelled", value: data.cancelled, color: "#E85C5C" },
+    {
+      label: "Total Ticket",
+      value: data.total,
+      color: "#4E86F0",
+    },
+    {
+      label: "For Review",
+      value: data.forReview,
+      color: "#F0B429",
+    },
+    {
+      label: "In Progress",
+      value: data.inProgress,
+      color: "#8B6BF0",
+    },
+    {
+      label: "Resolved",
+      value: data.resolved,
+      color: "#2FBF87",
+    },
+    {
+      label: "Closed",
+      value: data.closed,
+      color: "#8C97A0",
+    },
+    {
+      label: "Cancelled",
+      value: data.cancelled,
+      color: "#E85C5C",
+    },
   ];
 
   return (
@@ -78,11 +155,14 @@ export default function StatusTickets() {
         <div
           key={item.label}
           className="bg-white rounded-xl shadow-md border border-slate-200 px-5 pt-[14px] pb-[22px] w-full"
-          style={{ borderTop: `4px solid ${item.color}` }}
+          style={{
+            borderTop: `4px solid ${item.color}`,
+          }}
         >
           <div className="text-[12px] font-bold uppercase tracking-wide text-slate-700">
             {item.label}
           </div>
+
           <div className="mt-2 text-[34px] font-extrabold text-slate-900">
             {loading ? "…" : item.value}
           </div>

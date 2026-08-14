@@ -1,7 +1,7 @@
 "use client";
 
 import StatusTickets from "./components/StatusTickets";
-import MyTicket from "./components/MyTicket";
+import MyTicket from "./components/RecentTicket";
 import ByCategory from "./components/ByCategory";
 import DueActivity from "./components/DueActivity";
 

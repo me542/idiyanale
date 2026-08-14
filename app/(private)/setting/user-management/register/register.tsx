@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { registerUser } from "@/services/integration/auth/register";
 import { getInstitutions, InstitutionResp } from "./api/get-insti-public";
-
-// Same fields as the register form (staff_id, email, first_name, last_name,
-// phone_no, institution, job_position), wired to the same API calls, just
-// rendered as a modal component instead of a page.
+import { getPositionsByInstitutionId, Position } from "@/services/integration/super_admin/get_position_insti_id"; // adjust path
+import { registerUser, RegisterUserRequest } from "@/services/integration/user/post_resgister_user"; // adjust path
+import { verifyJWT } from "@/lib/auth/verify-jwt";
 
 interface CreateUserForm {
   staff_id: string;
@@ -14,7 +12,7 @@ interface CreateUserForm {
   first_name: string;
   last_name: string;
   phone_no: string;
-  institution: string; // institution_id as string, cast to number on submit
+  institution: string;
   job_position: string;
 }
 
@@ -31,12 +29,22 @@ const initialForm: CreateUserForm = {
 interface AddUserModalProps {
   open: boolean;
   onClose: () => void;
-  onCreated?: () => void; // called after a successful create, e.g. to refresh the table
+  onCreated?: () => void;
 }
 
-export default function AddUserModal({ open, onClose, onCreated }: AddUserModalProps) {
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export default function AddUserModal({
+  open,
+  onClose,
+  onCreated,
+}: AddUserModalProps) {
   const [form, setForm] = useState<CreateUserForm>(initialForm);
-  const [errors, setErrors] = useState<Partial<Record<keyof CreateUserForm, boolean>>>({});
+
+  const [errors, setErrors] = useState<
+    Partial<Record<keyof CreateUserForm, boolean>>
+  >({});
+
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -44,56 +52,169 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
   const [institutionsLoading, setInstitutionsLoading] = useState(true);
   const [institutionsError, setInstitutionsError] = useState(false);
 
-  // Reset form each time the modal is opened
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [positionsError, setPositionsError] = useState(false);
+
   useEffect(() => {
     if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(initialForm);
       setErrors({});
       setError("");
+      setPositions([]);
+      setPositionsError(false);
     }
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
+
     let cancelled = false;
 
-    (async () => {
+    const fetchUserInstitution = async () => {
       try {
         setInstitutionsLoading(true);
         setInstitutionsError(false);
-        const data = await getInstitutions();
-        if (!cancelled) {
-          setInstitutions(data.filter((i: InstitutionResp) => i.status === "active"));
+
+        const token =
+          localStorage.getItem("token") ||
+          localStorage.getItem("access_token");
+
+        if (!token) {
+          throw new Error("Authentication token not found.");
         }
-      } catch {
-        if (!cancelled) setInstitutionsError(true);
+
+        const jwt = await verifyJWT(token);
+
+        if (!jwt) {
+          throw new Error("Unable to verify authentication token.");
+        }
+
+        const institutionId = jwt.institution_id;
+
+        if (!institutionId) {
+          throw new Error("Institution ID not found in JWT.");
+        }
+
+        const data = await getInstitutions();
+
+        if (cancelled) return;
+
+        const institutionList = data ?? [];
+
+        const userInstitution = institutionList.filter(
+          (institution) =>
+            institution.institution_id === institutionId &&
+            institution.status.toLowerCase() === "active"
+        );
+
+        setInstitutions(userInstitution);
+
+        if (userInstitution.length > 0) {
+          setForm((current) => ({
+            ...current,
+            institution: String(userInstitution[0].institution_id),
+          }));
+        }
+      } catch (err) {
+        console.error("Failed to load user institution:", err);
+
+        if (!cancelled) {
+          setInstitutions([]);
+          setInstitutionsError(true);
+          setError(
+            err instanceof Error ? err.message : "Failed to load institution."
+          );
+        }
       } finally {
-        if (!cancelled) setInstitutionsLoading(false);
+        if (!cancelled) {
+          setInstitutionsLoading(false);
+        }
       }
-    })();
+    };
+
+    fetchUserInstitution();
 
     return () => {
       cancelled = true;
     };
   }, [open]);
 
-  const update = (key: keyof CreateUserForm) => (v: string) => {
-    let value = v;
-
-    if (key === "staff_id") {
-      const digits = value.replace(/\D/g, "");
-      const limited = digits.slice(0, 12);
-      value = limited.length > 6 ? `${limited.slice(0, 6)}-${limited.slice(6)}` : limited;
+  useEffect(() => {
+    if (!open || !form.institution) {
+      setPositions([]);
+      return;
     }
 
-    setForm((f) => ({ ...f, [key]: value }));
-    setErrors((e) => ({ ...e, [key]: false }));
-    setError("");
-  };
+    let cancelled = false;
+
+    const fetchPositions = async () => {
+      try {
+        setPositionsLoading(true);
+        setPositionsError(false);
+
+        const res = await getPositionsByInstitutionId(form.institution);
+
+        if (cancelled) return;
+
+        const positionList = res?.response ?? [];
+        setPositions(positionList);
+      } catch (err) {
+        console.error("Failed to load positions:", err);
+
+        if (!cancelled) {
+          setPositions([]);
+          setPositionsError(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setPositionsLoading(false);
+        }
+      }
+    };
+
+    fetchPositions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, form.institution]);
+
+  const update =
+    (key: keyof CreateUserForm) => (value: string) => {
+      let newValue = value;
+
+      if (key === "staff_id") {
+        const digits = value.replace(/\D/g, "");
+        const limited = digits.slice(0, 11);
+
+        newValue =
+          limited.length > 6
+            ? `${limited.slice(0, 6)}-${limited.slice(6)}`
+            : limited;
+      }
+
+      if (key === "phone_no") {
+        // Digits only, capped at 11 (e.g. 09123456789)
+        newValue = value.replace(/\D/g, "").slice(0, 11);
+      }
+
+      setForm((current) => ({
+        ...current,
+        [key]: newValue,
+        ...(key === "institution" ? { job_position: "" } : {}),
+      }));
+
+      setErrors((current) => ({
+        ...current,
+        [key]: false,
+      }));
+
+      setError("");
+    };
 
   const validate = () => {
-    const required: (keyof CreateUserForm)[] = [
+    const requiredFields: (keyof CreateUserForm)[] = [
       "staff_id",
       "email",
       "first_name",
@@ -102,20 +223,36 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
       "institution",
       "job_position",
     ];
-    const next: Partial<Record<keyof CreateUserForm, boolean>> = {};
-    let ok = true;
-    for (const key of required) {
+
+    const nextErrors: Partial<Record<keyof CreateUserForm, boolean>> = {};
+
+    let valid = true;
+
+    for (const key of requiredFields) {
       if (!form[key].trim()) {
-        next[key] = true;
-        ok = false;
+        nextErrors[key] = true;
+        valid = false;
       }
     }
-    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) {
-      next.email = true;
-      ok = false;
+
+    if (!form.email.trim() || !EMAIL_REGEX.test(form.email.trim())) {
+      nextErrors.email = true;
+      valid = false;
     }
-    setErrors(next);
-    return ok;
+
+    if (form.staff_id && !/^\d{6}-\d{5}$/.test(form.staff_id)) {
+      nextErrors.staff_id = true;
+      valid = false;
+    }
+
+    if (form.phone_no && form.phone_no.length !== 11) {
+      nextErrors.phone_no = true;
+      valid = false;
+    }
+
+    setErrors(nextErrors);
+
+    return valid;
   };
 
   const handleSubmit = async () => {
@@ -128,21 +265,32 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
       setLoading(true);
       setError("");
 
-      await registerUser({
+      const payload: RegisterUserRequest = {
         staff_id: form.staff_id.trim(),
         email: form.email.trim(),
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         phone_no: form.phone_no.trim(),
-        institution_id: Number(form.institution.trim()),
-        job_position: form.job_position.trim(),
-        status: "pending",
-      });
+        position_id: Number(form.job_position),
+        institution_id: Number(form.institution),
+      };
+
+      const res = await registerUser(payload);
+
+      if (res?.ret_code && res.ret_code !== "0") {
+        throw new Error(res.message || "Failed to create user.");
+      }
+
+      // Reset the form back to a blank state so no stale data lingers
+      // if the modal is reopened.
+      setForm(initialForm);
+      setErrors({});
+      setError("");
 
       onCreated?.();
       onClose();
     } catch (err: unknown) {
-      setError((err as Error).message || "Failed to create user");
+      setError(err instanceof Error ? err.message : "Failed to create user");
     } finally {
       setLoading(false);
     }
@@ -166,13 +314,6 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
           <h2 className="text-lg font-semibold text-slate-800">Add User</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="text-sm font-medium text-slate-500 hover:text-slate-700"
-          >
-            Cancel
-          </button>
         </div>
 
         <div className="grid max-h-[70vh] grid-cols-1 gap-4 overflow-y-auto px-6 py-6 sm:grid-cols-2">
@@ -181,6 +322,7 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
               First Name
             </label>
             <input
+              type="text"
               value={form.first_name}
               onChange={(e) => update("first_name")(e.target.value)}
               className={inputClass(errors.first_name)}
@@ -192,6 +334,7 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
               Last Name
             </label>
             <input
+              type="text"
               value={form.last_name}
               onChange={(e) => update("last_name")(e.target.value)}
               className={inputClass(errors.last_name)}
@@ -203,11 +346,19 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
               Staff ID Number
             </label>
             <input
+              type="text"
               value={form.staff_id}
               onChange={(e) => update("staff_id")(e.target.value)}
               placeholder="123456-78901"
+              maxLength={12}
+              inputMode="numeric"
               className={inputClass(errors.staff_id)}
             />
+            {errors.staff_id && (
+              <p className="mt-1 text-xs text-red-500">
+                Staff ID must follow the format 123456-78901.
+              </p>
+            )}
           </div>
 
           <div>
@@ -218,8 +369,14 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
               type="email"
               value={form.email}
               onChange={(e) => update("email")(e.target.value)}
+              required
               className={inputClass(errors.email)}
             />
+            {errors.email && (
+              <p className="mt-1 text-xs text-red-500">
+                Please enter a valid email address.
+              </p>
+            )}
           </div>
 
           <div>
@@ -227,10 +384,19 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
               Phone Number
             </label>
             <input
+              type="text"
               value={form.phone_no}
               onChange={(e) => update("phone_no")(e.target.value)}
+              placeholder="09123456789"
+              maxLength={11}
+              inputMode="numeric"
               className={inputClass(errors.phone_no)}
             />
+            {errors.phone_no && (
+              <p className="mt-1 text-xs text-red-500">
+                Phone number must be exactly 11 digits.
+              </p>
+            )}
           </div>
 
           <div>
@@ -245,20 +411,24 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
             >
               <option value="" disabled>
                 {institutionsLoading
-                  ? "Loading institutions…"
+                  ? "Loading institution..."
                   : institutionsError
-                  ? "Failed to load institutions"
+                  ? "Failed to load institution"
                   : "Select institution"}
               </option>
-              {institutions.map((inst) => (
-                <option key={inst.institution_id} value={String(inst.institution_id)}>
-                  {inst.institution_name}
+
+              {institutions.map((institution) => (
+                <option
+                  key={institution.institution_id}
+                  value={String(institution.institution_id)}
+                >
+                  {institution.institution_name}
                 </option>
               ))}
             </select>
             {institutionsError && (
               <p className="mt-1 text-xs text-red-500">
-                Could not load institutions. Please refresh and try again.
+                Could not load your institution. Please refresh and try again.
               </p>
             )}
           </div>
@@ -267,12 +437,38 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
             <label className="mb-1 block text-xs font-semibold text-slate-500">
               Job Position
             </label>
-            <input
+            <select
               value={form.job_position}
               onChange={(e) => update("job_position")(e.target.value)}
-              placeholder="e.g. Registrar Staff"
+              disabled={
+                !form.institution || positionsLoading || positionsError
+              }
               className={inputClass(errors.job_position)}
-            />
+            >
+              <option value="" disabled>
+                {!form.institution
+                  ? "Select institution first"
+                  : positionsLoading
+                  ? "Loading job positions..."
+                  : positionsError
+                  ? "Failed to load job positions"
+                  : "Select job position"}
+              </option>
+
+              {positions.map((position) => (
+                <option
+                  key={position.position_id}
+                  value={String(position.position_id)}
+                >
+                  {position.position_name}
+                </option>
+              ))}
+            </select>
+            {positionsError && (
+              <p className="mt-1 text-xs text-red-500">
+                Could not load job positions. Please try again.
+              </p>
+            )}
           </div>
         </div>
 
@@ -280,17 +476,20 @@ export default function AddUserModal({ open, onClose, onCreated }: AddUserModalP
 
         <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
           <button
+            type="button"
             onClick={onClose}
             className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
           >
             Cancel
           </button>
+
           <button
+            type="button"
             onClick={handleSubmit}
             disabled={loading}
-            className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
+            className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? "Creating…" : "Create User"}
+            {loading ? "Creating..." : "Create User"}
           </button>
         </div>
       </div>

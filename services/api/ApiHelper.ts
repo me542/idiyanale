@@ -150,37 +150,39 @@ async function request<T>(
 ): Promise<T> {
   const token = getStoredToken();
 
-  const isFormData =
-    typeof FormData !== "undefined" &&
-    body instanceof FormData;
+  const url = buildUrl(endpoint, options?.params);
 
-  const headers: Record<string, string> = {
-    ...(isFormData
-      ? {}
-      : { "Content-Type": "application/json" }),
-    ...(token
-      ? {
-          Authorization: `Bearer ${token}`,
-        }
-      : {}),
-    ...options?.headers,
-  };
+  console.time(`API ${method} ${endpoint}`);
 
-  const response = await fetch(
-    buildUrl(endpoint, options?.params),
-    {
-      method,
-      headers,
-      cache: "no-store",
-      ...(body !== undefined
+  const response = await fetch(url, {
+    method,
+    headers: {
+      ...(
+        typeof FormData !== "undefined" &&
+        body instanceof FormData
+          ? {}
+          : { "Content-Type": "application/json" }
+      ),
+      ...(token
         ? {
-            body: isFormData
-              ? (body as FormData)
-              : JSON.stringify(body),
+            Authorization: `Bearer ${token}`,
           }
         : {}),
-    }
-  );
+      ...options?.headers,
+    },
+    cache: "no-store",
+    ...(body !== undefined
+      ? {
+          body:
+            typeof FormData !== "undefined" &&
+            body instanceof FormData
+              ? (body as FormData)
+              : JSON.stringify(body),
+        }
+      : {}),
+  });
+
+  console.timeEnd(`API ${method} ${endpoint}`);
 
   return handleResponse<T>(
     response,

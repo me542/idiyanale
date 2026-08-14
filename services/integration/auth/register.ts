@@ -13,5 +13,7 @@ interface RegisterPayload {
 }
 
 export async function registerUser(payload: RegisterPayload) {
-  return post<{ message?: string }>(ApiEndpoint.REGISTER, payload);
+  return post<{
+    ret_code: boolean; message?: string 
+}>(ApiEndpoint.REGISTER, payload);
 }

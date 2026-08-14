@@ -1,60 +1,89 @@
-import { TicketResponse } from "./../api/get_ticket"; 
+import { InstitutionTicket } from "@/services/integration/ticket/get_all_ticket_by_insti";
 import { DueActivityItem } from "./types";
 
-const CLOSED_STATUSES = ["resolved", "closed", "cancelled"];
-
-
-
-function formatDueLabel(dueDate: Date, now: Date): { label: string; isOverdue: boolean; isToday: boolean } {
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffDays = Math.round((dueDay.getTime() - today.getTime()) / msPerDay);
-
-  if (diffDays === 0) return { label: "Due today", isOverdue: false, isToday: true };
-  if (diffDays === 1) return { label: "Due tomorrow", isOverdue: false, isToday: false };
-  if (diffDays > 1) return { label: `Due in ${diffDays} days`, isOverdue: false, isToday: false };
-
-  const overdueDays = Math.abs(diffDays);
-  return {
-    label: overdueDays === 1 ? "Overdue by 1 day" : `Overdue by ${overdueDays} days`,
-    isOverdue: true,
-    isToday: false,
-  };
+function normalizeStatus(status: string): string {
+  return status
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
 }
 
-function formatCreatedLabel(createdDate: Date): string {
-  return `Created ${createdDate.toLocaleDateString("en-US", {
+function formatDate(dateStr?: string | null): string {
+  if (!dateStr) return "";
+
+  const date = new Date(dateStr);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
-  })}`;
+  });
 }
 
 export function mapTicketsToDueActivity(
-  tickets: TicketResponse[],
-  limit = 6
+  tickets: InstitutionTicket[]
 ): DueActivityItem[] {
   const now = new Date();
 
+  const completedStatuses = new Set([
+    "resolved",
+    "closed",
+    "cancelled",
+    "canceled",
+  ]);
+
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+
   return tickets
-    .filter((t) => t.due_date && !CLOSED_STATUSES.includes(t.status?.toLowerCase()))
-    .map((t) => {
-      const dueDate = new Date(t.due_date);
-      const createdDate = new Date(t.created_at);
-      const { label, isOverdue, isToday } = formatDueLabel(dueDate, now);
+    // Don't display completed/cancelled tickets
+    .filter((ticket) => {
+      const status = normalizeStatus(ticket.status);
+
+      return !completedStatuses.has(status);
+    })
+
+    // Only display tickets that have a due date
+    .filter((ticket) => ticket.due_date)
+
+    .map((ticket) => {
+      const dueDate = new Date(ticket.due_date!);
+
+      const isOverdue = dueDate < startOfToday;
+
+      const isToday =
+        dueDate >= startOfToday &&
+        dueDate <= endOfToday;
+
       return {
-        ticketId: t.ticket_id,
-        title: t.subject,
-        due: label,
-        createdLabel: formatCreatedLabel(createdDate),
-        status: t.status,
+        ticketId: ticket.ticket_id,
+        title: ticket.subject,
+
+        // IMPORTANT:
+        // This comes directly from your API's created_at
+        dateCreated: formatDate(ticket.created_at),
+
+        // This comes from your API's due_date
+        due: formatDate(ticket.due_date),
+
+        status: ticket.status,
+
         isOverdue,
         isToday,
-        _sortDate: dueDate.getTime(),
       };
     })
-    .sort((a, b) => a._sortDate - b._sortDate)
-    .slice(0, limit)
-    .map(({ _sortDate, ...item }) => item);
+    .sort((a, b) => {
+      if (a.isOverdue !== b.isOverdue) {
+        return a.isOverdue ? -1 : 1;
+      }
+
+      return 0;
+    });
 }

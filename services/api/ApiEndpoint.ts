@@ -40,6 +40,7 @@ export const ApiEndpoint = {
   PATCH_SUB_CATEGORY: (subCategoryId: number | string) => `/api/v1/protected/edit-sub-category-info/${subCategoryId}`,
 
   // --------------------- USER ---------------------------
+  POST_REGISTER_USER: "/api/v1/protected/register-user",
 
   GET_USER_BY_ID_U: (id: number | string) => `/api/v1/protected/get-user/details/${id}`,
   GET_USER_BY_INSTI_U: (institutionId: number | string) => `/api/v1/protected/get-users/${institutionId}`,

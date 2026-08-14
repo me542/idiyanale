@@ -21,21 +21,33 @@ export async function verifyJWT(
   token: string
 ): Promise<JwtPayload | null> {
   try {
-    const secret = process.env.NEXT_PUBLIC_JWT_SECRET;
+    const secret =
+      process.env.NEXT_PUBLIC_JWT_SECRET;
 
     if (!secret) {
-      throw new Error("JWT secret is not configured");
+      throw new Error(
+        "JWT secret is not configured"
+      );
     }
 
-    const secretKey = new TextEncoder().encode(secret);
+    const secretKey =
+      new TextEncoder().encode(secret);
 
-    const { payload } = await jwtVerify(token, secretKey, {
-      algorithms: ["HS256"],
-    });
+    const { payload } = await jwtVerify(
+      token,
+      secretKey,
+      {
+        algorithms: ["HS256"],
+      }
+    );
 
     return payload as JwtPayload;
   } catch (error) {
-    console.error("JWT verification failed:", error);
+    console.error(
+      "JWT verification failed:",
+      error
+    );
+
     return null;
   }
 }

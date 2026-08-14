@@ -24,10 +24,10 @@ export interface CategoryItem {
 
 export interface DueActivityItem {
   ticketId: string;
-  title: string;
-  due: string;      
   status: string;
+  title: string;
+  dateCreated: string;
+  due: string;
   isOverdue: boolean;
   isToday: boolean;
-  createdLabel: string;
 }
