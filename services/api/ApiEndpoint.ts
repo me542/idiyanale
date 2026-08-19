@@ -59,7 +59,7 @@ export const ApiEndpoint = {
   POST_ADD_INSTI: "/api/v1/institution/create",
   POST_EDIT_INSTI_BY_ID: (institutionId: number | string) => `/api/v1/institution/edit/${institutionId}`,
   POST_SET_ALLOW_INSTI_TICKET: "/api/v1/institution/allow-institution-ticket",
-  POST_CREATE_RESOLVER_GROUP: "/api/v1/institution/create-resolver-group",
+  POST_CREATE_RESOLVER_GROUP: "/api/v1/institution/resolver-groups",
 
   PUT_UPDATE_RESOLVER_GROUP: (resolverGroupId: number | string) => `/api/v1/institution/resolver-groups/${resolverGroupId}`,
 

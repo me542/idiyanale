@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { getInstitutions, InstitutionResp } from "./api/get-insti-public";
-import { getPositionsByInstitutionId, Position } from "@/services/integration/super_admin/get_position_insti_id"; // adjust path
-import { registerUser, RegisterUserRequest } from "@/services/integration/user/post_resgister_user"; // adjust path
+import { getPositionsByInstitutionId, Position } from "@/services/integration/super_admin/get_position_insti_id"; 
+import { addPosition } from "@/services/integration/insti-admin/post_position";
+import { registerUser, RegisterUserRequest } from "@/services/integration/user/post_resgister_user"; 
 import { verifyJWT } from "@/lib/auth/verify-jwt";
 
 interface CreateUserForm {
@@ -55,6 +56,10 @@ export default function AddUserModal({
   const [positions, setPositions] = useState<Position[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positionsError, setPositionsError] = useState(false);
+
+  const [newPosition, setNewPosition] = useState("");
+  const [addingPosition, setAddingPosition] = useState(false);
+  const [showAddPosition, setShowAddPosition] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -179,6 +184,52 @@ export default function AddUserModal({
       cancelled = true;
     };
   }, [open, form.institution]);
+
+const handleAddPosition = async () => {
+  const positionName = newPosition.trim();
+
+  if (!positionName) return;
+
+  try {
+    setAddingPosition(true);
+
+    const res = await addPosition({
+      position_name: positionName,
+    });
+
+    // Backend returns ret_code: "200" on success
+    if (res?.ret_code !== "200") {
+      throw new Error(res?.message || "Failed to add position.");
+    }
+
+    // Reload positions
+    const updated = await getPositionsByInstitutionId(form.institution);
+    const positionList = updated?.response ?? [];
+
+    setPositions(positionList);
+
+    // Automatically select the newly created position
+    const createdPosition = positionList.find(
+      (position) =>
+        position.position_name.toLowerCase() ===
+        positionName.toLowerCase()
+    );
+
+    if (createdPosition) {
+      setForm((current) => ({
+        ...current,
+        job_position: String(createdPosition.position_id),
+      }));
+    }
+
+    setNewPosition("");
+    setShowAddPosition(false);
+  } catch (err) {
+    console.error("Failed to add position:", err);
+  } finally {
+    setAddingPosition(false);
+  }
+};
 
   const update =
     (key: keyof CreateUserForm) => (value: string) => {
@@ -313,7 +364,7 @@ export default function AddUserModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
-          <h2 className="text-lg font-semibold text-slate-800">Add User</h2>
+          <h2 className="text-lg font-semibold text-slate-800">Register User</h2>
         </div>
 
         <div className="grid max-h-[70vh] grid-cols-1 gap-4 overflow-y-auto px-6 py-6 sm:grid-cols-2">
@@ -433,43 +484,101 @@ export default function AddUserModal({
             )}
           </div>
 
-          <div className="sm:col-span-2">
-            <label className="mb-1 block text-xs font-semibold text-slate-500">
-              Job Position
-            </label>
-            <select
-              value={form.job_position}
-              onChange={(e) => update("job_position")(e.target.value)}
-              disabled={
-                !form.institution || positionsLoading || positionsError
-              }
-              className={inputClass(errors.job_position)}
-            >
-              <option value="" disabled>
-                {!form.institution
-                  ? "Select institution first"
-                  : positionsLoading
-                  ? "Loading job positions..."
-                  : positionsError
-                  ? "Failed to load job positions"
-                  : "Select job position"}
-              </option>
+<div className="sm:col-span-2">
+  <label className="mb-1 block text-xs font-semibold text-slate-500">
+    Job Position
+  </label>
 
-              {positions.map((position) => (
-                <option
-                  key={position.position_id}
-                  value={String(position.position_id)}
-                >
-                  {position.position_name}
-                </option>
-              ))}
-            </select>
-            {positionsError && (
-              <p className="mt-1 text-xs text-red-500">
-                Could not load job positions. Please try again.
-              </p>
-            )}
-          </div>
+  <select
+    value={showAddPosition ? "__add_position__" : form.job_position}
+    onChange={(e) => {
+      const value = e.target.value;
+
+      if (value === "__add_position__") {
+        setShowAddPosition(true);
+        setNewPosition("");
+        return;
+      }
+
+      setShowAddPosition(false);
+      update("job_position")(value);
+    }}
+    disabled={
+      !form.institution ||
+      positionsLoading ||
+      positionsError
+    }
+    className={inputClass(errors.job_position)}
+  >
+    <option value="" disabled>
+      {!form.institution
+        ? "Select institution first"
+        : positionsLoading
+        ? "Loading job positions..."
+        : positionsError
+        ? "Failed to load job positions"
+        : "Select job position"}
+    </option>
+
+    {positions.map((position) => (
+      <option
+        key={position.position_id}
+        value={String(position.position_id)}
+      >
+        {position.position_name}
+      </option>
+    ))}
+
+    <option value="__add_position__">
+      + Add New Position
+    </option>
+  </select>
+
+  {showAddPosition && (
+    <div className="mt-2 flex gap-2">
+      <input
+        type="text"
+        value={newPosition}
+        onChange={(e) => setNewPosition(e.target.value)}
+        placeholder="Enter position name"
+        className={inputClass()}
+        autoFocus
+      />
+
+      <button
+        type="button"
+        onClick={handleAddPosition}
+        disabled={!newPosition.trim() || addingPosition}
+        className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {addingPosition ? "Adding..." : "Add"}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setShowAddPosition(false);
+          setNewPosition("");
+        }}
+        className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+      >
+        Cancel
+      </button>
+    </div>
+  )}
+
+  {errors.job_position && (
+    <p className="mt-1 text-xs text-red-500">
+      Please select a job position.
+    </p>
+  )}
+
+  {positionsError && (
+    <p className="mt-1 text-xs text-red-500">
+      Could not load job positions. Please try again.
+    </p>
+  )}
+</div>
         </div>
 
         {error && <p className="px-6 pb-2 text-sm text-red-500">{error}</p>}

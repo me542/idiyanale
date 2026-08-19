@@ -1,31 +1,51 @@
-// import type { Permissions } from "./jwt";
+"use client";
+import { useEffect, useState } from "react";
+import { verifyJWT, JwtPayload } from "./verify-jwt"; // adjust to actual path
 
-// export function getStoredPermissions(): Permissions | null {
-//   if (typeof window === "undefined") return null;
+function getTokenFromCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
-//   const raw = localStorage.getItem("permissions");
-//   if (!raw) return null;
+interface UseAuthResult {
+  user: JwtPayload | null;
+  institutionId: number | null;
+  loading: boolean;
+}
 
-//   try {
-//     return JSON.parse(raw) as Permissions;
-//   } catch {
-//     return null;
-//   }
-// }
+export function useAuth(): UseAuthResult {
+  const [user, setUser] = useState<JwtPayload | null>(null);
+  const [loading, setLoading] = useState(true);
 
-// // Mirrors your BE's RequirePermission(c, func(p) bool { ... })
-// export function hasPermission(check: (p: Permissions) => boolean): boolean {
-//   const perms = getStoredPermissions();
-//   if (!perms) return false;
-//   return check(perms);
-// }
+  useEffect(() => {
+    let cancelled = false;
 
-// export function getStoredInstitutionId(): number | null {
-//   if (typeof window === "undefined") return null;
+    (async () => {
+      const token = getTokenFromCookie();
+      if (!token) {
+        if (!cancelled) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
 
-//   const raw = localStorage.getItem("institution_id");
-//   if (!raw) return null;
+      const payload = await verifyJWT(token);
+      if (!cancelled) {
+        setUser(payload);
+        setLoading(false);
+      }
+    })();
 
-//   const parsed = Number(raw);
-//   return Number.isNaN(parsed) ? null : parsed;
-// }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return {
+    user,
+    institutionId: user?.institution_id ?? null,
+    loading,
+  };
+}

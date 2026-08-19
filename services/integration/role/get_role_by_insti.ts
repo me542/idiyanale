@@ -15,9 +15,9 @@ export interface Role {
 }
 
 export interface GetRolesByInstitutionResponse {
-  ret_code?: string;
-  message?: string;
-  data?: Role[];
+  response: Role[];
+  ret_code: string;
+  message: string;
 }
 
 export const getRolesByInstitution = async (

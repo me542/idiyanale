@@ -1,34 +1,45 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download, Loader2 } from "lucide-react";
+import { getAllTicketsByInstitution, InstitutionTicket } from "@/services/integration/ticket/get_all_ticket_by_insti"; // adjust path if needed
+import { verifyJWT } from "@/lib/auth/verify-jwt"; // adjust to actual path
+import {
+  StatusBucket,
+  ReviewStage,
+  BUCKET_LABELS,
+  STAGE_LABELS,
+  getStatusBucket,
+  getReviewStage,
+} from "../dashboard/components/status_ticket"; // adjust path if needed
 
-type Ticket = {
+// ---- Row shape rendered by the table (flattened from InstitutionTicket) ----
+type TicketRow = {
   TicketID: string;
   ProjectID: number;
-  InstitutionID: number;
+  Institution: string;
   InstitutionPool: number;
-  TicketTypeID: number;
-  CategoryID: number;
-  SubCategoryID: number;
+  TicketType: string;
+  Category: string;
+  SubCategory: string;
 
   Subject: string;
   Description: string;
   DueDate: string | null;
 
-  SubmitterID: number;
-  ResolverID: number;
-  EndorserID: number;
-  ApproverID: number;
+  Submitter: string;
+  Endorser: string;
+  Approver: string;
+  Resolver: string;
 
   Status: string;
 
   CreatedAt: string;
   UpdatedAt: string;
 
-  CancelledBy: string;
-  CancelledAt: string | null;
-  CancellationReason: string;
+  EndorsedAt: string | null;
+  ApprovedAt: string | null;
 
   StartedAt: string | null;
   ResolvedAt: string | null;
@@ -37,43 +48,39 @@ type Ticket = {
   OnHold: boolean;
   HoldAt: string | null;
 
+  CancelledBy: string;
+  CancelledAt: string | null;
+
   ClosedBy: string;
   ClosedAt: string | null;
-
-  EndorsedAt: string | null;
-  ApprovedAt: string | null;
 };
-
-// TODO: Replace with your API response.
-const tickets: Ticket[] = [];
 
 type ColumnType = "text" | "number" | "date" | "boolean" | "status";
 
 type ColumnDef = {
-  key: keyof Ticket;
+  key: keyof TicketRow;
   label: string;
   type: ColumnType;
 };
 
 const columns: ColumnDef[] = [
   { key: "TicketID", label: "Ticket ID", type: "text" },
+  { key: "Status", label: "Status", type: "status" },
   { key: "ProjectID", label: "Project", type: "number" },
-  { key: "InstitutionID", label: "Institution", type: "number" },
-  { key: "InstitutionPool", label: "Institution Pool", type: "number" },
-  { key: "TicketTypeID", label: "Ticket Type", type: "number" },
-  { key: "CategoryID", label: "Category", type: "number" },
-  { key: "SubCategoryID", label: "Subcategory", type: "number" },
+  // { key: "Institution", label: "Institution", type: "text" },
+  // { key: "InstitutionPool", label: "Institution Pool", type: "number" },
+  { key: "TicketType", label: "Ticket Type", type: "text" },
+  { key: "Category", label: "Category", type: "text" },
+  { key: "SubCategory", label: "Subcategory", type: "text" },
 
   { key: "Subject", label: "Subject", type: "text" },
   { key: "Description", label: "Description", type: "text" },
   { key: "DueDate", label: "Date Needed", type: "date" },
 
-  { key: "SubmitterID", label: "Submitter", type: "number" },
-  { key: "EndorserID", label: "Endorser", type: "number" },
-  { key: "ApproverID", label: "Approver", type: "number" },
-  { key: "ResolverID", label: "Resolver", type: "number" },
-
-  { key: "Status", label: "Status", type: "status" },
+  { key: "Submitter", label: "Submitter", type: "text" },
+  { key: "Endorser", label: "Endorser", type: "text" },
+  { key: "Approver", label: "Approver", type: "text" },
+  { key: "Resolver", label: "Resolver", type: "text" },
 
   { key: "CreatedAt", label: "Created At", type: "date" },
   { key: "UpdatedAt", label: "Updated At", type: "date" },
@@ -90,7 +97,6 @@ const columns: ColumnDef[] = [
 
   { key: "CancelledBy", label: "Cancelled By", type: "text" },
   { key: "CancelledAt", label: "Cancelled At", type: "date" },
-  { key: "CancellationReason", label: "Cancellation Reason", type: "text" },
 
   { key: "ClosedBy", label: "Closed By", type: "text" },
   { key: "ClosedAt", label: "Closed At", type: "date" },
@@ -99,7 +105,7 @@ const columns: ColumnDef[] = [
 type SortDirection = "asc" | "desc" | null;
 
 type SortState = {
-  key: keyof Ticket | null;
+  key: keyof TicketRow | null;
   direction: SortDirection;
 };
 
@@ -111,7 +117,7 @@ type DateFilter = { kind: "date"; from: string; to: string };
 
 type FilterValue = TextFilter | NumberFilter | BooleanFilter | StatusFilter | DateFilter;
 
-type FiltersState = Partial<Record<keyof Ticket, FilterValue>>;
+type FiltersState = Partial<Record<keyof TicketRow, FilterValue>>;
 
 function emptyFilterFor(type: ColumnType): FilterValue {
   switch (type) {
@@ -135,7 +141,7 @@ function isFilterActive(f: FilterValue) {
   return false;
 }
 
-function formatValue(value: Ticket[keyof Ticket]) {
+function formatValue(value: TicketRow[keyof TicketRow]) {
   if (value === null || value === undefined || value === "") {
     return "-";
   }
@@ -146,7 +152,6 @@ function formatValue(value: Ticket[keyof Ticket]) {
 }
 
 function toDateOnly(value: string) {
-  // value like "2024-05-01T10:30:00Z" or "2024-05-01"
   return value.length >= 10 ? value.slice(0, 10) : value;
 }
 
@@ -191,15 +196,168 @@ const DATE_PRESETS: { key: string; label: string }[] = [
   { key: "lastMonth", label: "Last month" },
 ];
 
-export default function TicketsTable() {
+// ---- Map API response -> table row ----
+function fullName(user: InstitutionTicket["submitter"] | null | undefined) {
+  if (!user) return "";
+  const name = `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
+  return name || user.email || "";
+}
+
+function mapToRow(t: InstitutionTicket): TicketRow {
+  return {
+    TicketID: t.ticket_id,
+    ProjectID: t.project_id,
+    Institution: t.institution?.institution_name ?? "",
+    InstitutionPool: t.institution_pool,
+    TicketType: t.ticket_type?.ticket_type_name ?? "",
+    Category: t.category?.category_name ?? "",
+    SubCategory: t.subcategory?.sub_category_name ?? "",
+
+    Subject: t.subject,
+    Description: t.description,
+    DueDate: t.due_date,
+
+    Submitter: fullName(t.submitter),
+    Endorser: fullName(t.endorser),
+    Approver: fullName(t.approver),
+    Resolver: fullName(t.resolver),
+
+    Status: t.status,
+
+    CreatedAt: t.created_at,
+    UpdatedAt: t.updated_at,
+
+    EndorsedAt: t.endorsed_at,
+    ApprovedAt: t.approved_at,
+
+    StartedAt: t.started_at,
+    ResolvedAt: t.resolved_at,
+    ResolutionTime: t.resolution_time,
+
+    OnHold: t.onhold,
+    HoldAt: t.hold_at,
+
+    CancelledBy: fullName(t.canceller),
+    CancelledAt: t.cancelled_at,
+
+    ClosedBy: fullName(t.closer),
+    ClosedAt: t.closed_at,
+  };
+}
+
+// Group filter shape (comes from the StatusTickets dashboard cards via URL params)
+type GroupFilter = {
+  bucket: StatusBucket | null;
+  stage: ReviewStage | null;
+};
+
+const BUCKET_KEYS = Object.keys(BUCKET_LABELS) as StatusBucket[];
+const STAGE_KEYS = Object.keys(STAGE_LABELS) as ReviewStage[];
+
+function TicketsTableInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [tickets, setTickets] = useState<TicketRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [institutionId, setInstitutionId] = useState<number | null>(null);
+
   const [sort, setSort] = useState<SortState>({ key: null, direction: null });
   const [filters, setFilters] = useState<FiltersState>({});
-  const [openFilter, setOpenFilter] = useState<keyof Ticket | null>(null);
+  const [openFilter, setOpenFilter] = useState<keyof TicketRow | null>(null);
   const [filterAnchorRect, setFilterAnchorRect] = useState<DOMRect | null>(null);
 
-  // Close the open filter popover (and drop its anchor) if the user
-  // scrolls or resizes the window, since a stale fixed position would
-  // otherwise float in the wrong place.
+  const [confirmDownloadOpen, setConfirmDownloadOpen] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // --- Group filter driven by the dashboard status cards (?status=&stage=) ---
+  const [groupFilter, setGroupFilter] = useState<GroupFilter>({ bucket: null, stage: null });
+
+  useEffect(() => {
+    const statusParam = searchParams.get("status") as StatusBucket | null;
+    const stageParam = searchParams.get("stage") as ReviewStage | null;
+
+    const bucket = statusParam && BUCKET_KEYS.includes(statusParam) ? statusParam : null;
+    const stage =
+      bucket === "forReview" && stageParam && STAGE_KEYS.includes(stageParam) ? stageParam : null;
+
+    setGroupFilter({ bucket, stage });
+  }, [searchParams]);
+
+  function clearGroupFilter() {
+    setGroupFilter({ bucket: null, stage: null });
+    router.replace(pathname);
+  }
+
+  // --- Resolve institutionId from the logged-in user's JWT ---
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveInstitution() {
+      const token =
+        localStorage.getItem("token") ?? localStorage.getItem("access_token");
+
+      if (!token) {
+        if (!cancelled) {
+          setError("You're not logged in. Please log in again.");
+          setLoading(false);
+        }
+        return;
+      }
+
+      const payload = await verifyJWT(token);
+
+      if (cancelled) return;
+
+      if (!payload || payload.institution_id === undefined) {
+        setError("Could not determine your institution from your session.");
+        setLoading(false);
+        return;
+      }
+
+      setInstitutionId(payload.institution_id);
+    }
+
+    resolveInstitution();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // --- Fetch tickets once institutionId is known ---
+  useEffect(() => {
+    if (!institutionId) return;
+
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getAllTicketsByInstitution(institutionId!);
+        if (!cancelled) {
+          setTickets(data.map(mapToRow));
+        }
+      } catch (err) {
+        console.error("Failed to load tickets:", err);
+        if (!cancelled) {
+          setError("Failed to load tickets. Please try again.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [institutionId]);
+
   useEffect(() => {
     if (!openFilter) return;
     const close = () => {
@@ -214,27 +372,23 @@ export default function TicketsTable() {
     };
   }, [openFilter]);
 
-  // --- Download / export state ---
-  const [confirmDownloadOpen, setConfirmDownloadOpen] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-
   const statusOptions = useMemo(() => {
     const set = new Set<string>();
     tickets.forEach((t) => {
       if (t.Status) set.add(t.Status);
     });
     return Array.from(set).sort();
-  }, []);
+  }, [tickets]);
 
-  function getFilter(key: keyof Ticket, type: ColumnType): FilterValue {
+  function getFilter(key: keyof TicketRow, type: ColumnType): FilterValue {
     return filters[key] ?? emptyFilterFor(type);
   }
 
-  function updateFilter(key: keyof Ticket, value: FilterValue) {
+  function updateFilter(key: keyof TicketRow, value: FilterValue) {
     setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
-  function clearFilter(key: keyof Ticket, type: ColumnType) {
+  function clearFilter(key: keyof TicketRow, type: ColumnType) {
     setFilters((prev) => ({ ...prev, [key]: emptyFilterFor(type) }));
   }
 
@@ -242,7 +396,7 @@ export default function TicketsTable() {
     setFilters({});
   }
 
-  function toggleSort(key: keyof Ticket) {
+  function toggleSort(key: keyof TicketRow) {
     setSort((prev) => {
       if (prev.key !== key) return { key, direction: "asc" };
       if (prev.direction === "asc") return { key, direction: "desc" };
@@ -257,6 +411,14 @@ export default function TicketsTable() {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
+      // Group filter from the dashboard status cards
+      if (groupFilter.bucket) {
+        if (getStatusBucket(ticket.Status) !== groupFilter.bucket) return false;
+        if (groupFilter.stage && getReviewStage(ticket.Status) !== groupFilter.stage) {
+          return false;
+        }
+      }
+
       for (const col of columns) {
         const f = filters[col.key];
         if (!f) continue;
@@ -287,7 +449,7 @@ export default function TicketsTable() {
       }
       return true;
     });
-  }, [filters]);
+  }, [tickets, filters, groupFilter]);
 
   const sortedTickets = useMemo(() => {
     if (!sort.key || !sort.direction) return filteredTickets;
@@ -314,9 +476,6 @@ export default function TicketsTable() {
     });
   }, [filteredTickets, sort]);
 
-  // --- Export logic ---
-  // Exports whatever is currently in `sortedTickets`, so if filters are
-  // active, only the filtered/sorted rows are exported.
   async function performDownload() {
     setIsDownloading(true);
     try {
@@ -343,7 +502,7 @@ export default function TicketsTable() {
       XLSX.utils.book_append_sheet(workbook, worksheet, "Tickets");
 
       const dateStr = new Date().toISOString().slice(0, 10);
-      const filenameSuffix = activeFilterCount > 0 ? "filtered" : "all";
+      const filenameSuffix = activeFilterCount > 0 || groupFilter.bucket ? "filtered" : "all";
       XLSX.writeFile(workbook, `tickets-${filenameSuffix}-${dateStr}.xlsx`);
 
       setConfirmDownloadOpen(false);
@@ -355,34 +514,69 @@ export default function TicketsTable() {
     }
   }
 
+  const groupFilterLabel = groupFilter.bucket
+    ? `${BUCKET_LABELS[groupFilter.bucket]}${groupFilter.stage ? ` · ${STAGE_LABELS[groupFilter.stage]}` : ""}`
+    : null;
+
   return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 shadow-md">
+      {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-6 py-4">
+        {/* Left: Title + Count */}
         <div className="flex items-baseline gap-2">
-          <h2 className="text-base font-semibold text-gray-900">Tickets</h2>
+          <h2 className="text-base font-semibold text-gray-900">
+            Tickets
+          </h2>
+
           <span className="text-sm text-gray-400">
-            {sortedTickets.length} of {tickets.length} total
+            {loading
+              ? "Loading..."
+              : `${sortedTickets.length} of ${tickets.length} total`}
           </span>
         </div>
-        {activeFilterCount > 0 && (
+
+        {/* Right: Group filter chip + Column filters + Download */}
+        <div className="flex items-center gap-2">
+          {groupFilterLabel && (
+            <button
+              onClick={clearGroupFilter}
+              className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+            >
+              <X className="h-3 w-3" />
+              {groupFilterLabel}
+            </button>
+          )}
+
+          {activeFilterCount > 0 && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            >
+              <X className="h-3 w-3" />
+              Clear {activeFilterCount} filter
+              {activeFilterCount > 1 ? "s" : ""}
+            </button>
+          )}
+
           <button
-            onClick={clearAllFilters}
-            className="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+            onClick={() => setConfirmDownloadOpen(true)}
+            disabled={sortedTickets.length === 0}
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <X className="h-3 w-3" />
-            Clear {activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""}
+            <Download className="h-3.5 w-3.5" />
+            Download
           </button>
-        )}
-        <button
-          onClick={() => setConfirmDownloadOpen(true)}
-          disabled={sortedTickets.length === 0}
-          className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Download
-        </button>
+        </div>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1800px] border-collapse text-sm">
           <thead>
@@ -399,34 +593,43 @@ export default function TicketsTable() {
                     className="relative whitespace-nowrap px-4 py-3 text-left"
                   >
                     <div className="flex items-center gap-1.5">
+                      {/* Sort Button */}
                       <button
                         onClick={() => toggleSort(col.key)}
                         className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-800"
                       >
                         {col.label}
+
                         {isSorted && sort.direction === "asc" && (
                           <ChevronUp className="h-3.5 w-3.5" />
                         )}
+
                         {isSorted && sort.direction === "desc" && (
                           <ChevronDown className="h-3.5 w-3.5" />
                         )}
+
                         {!isSorted && (
                           <ChevronsUpDown className="h-3.5 w-3.5 text-gray-300" />
                         )}
                       </button>
 
+                      {/* Filter Button */}
                       <button
                         onClick={(e) => {
                           if (openFilter === col.key) {
                             setOpenFilter(null);
                             setFilterAnchorRect(null);
                           } else {
-                            setFilterAnchorRect(e.currentTarget.getBoundingClientRect());
+                            setFilterAnchorRect(
+                              e.currentTarget.getBoundingClientRect()
+                            );
                             setOpenFilter(col.key);
                           }
                         }}
                         className={`rounded p-0.5 hover:bg-gray-200 ${
-                          isActive ? "text-gray-900" : "text-gray-400"
+                          isActive
+                            ? "text-gray-900"
+                            : "text-gray-400"
                         }`}
                         aria-label={`Filter ${col.label}`}
                       >
@@ -437,13 +640,16 @@ export default function TicketsTable() {
                       </button>
                     </div>
 
+                    {/* Filter Popover */}
                     {isOpen && filterAnchorRect && (
                       <ColumnFilterPopover
                         col={col}
                         filter={filter}
                         anchorRect={filterAnchorRect}
                         onChange={(v) => updateFilter(col.key, v)}
-                        onClear={() => clearFilter(col.key, col.type)}
+                        onClear={() =>
+                          clearFilter(col.key, col.type)
+                        }
                         onClose={() => {
                           setOpenFilter(null);
                           setFilterAnchorRect(null);
@@ -458,7 +664,21 @@ export default function TicketsTable() {
           </thead>
 
           <tbody>
-            {sortedTickets.length === 0 ? (
+            {/* Loading */}
+            {loading ? (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  className="px-6 py-16 text-center text-sm text-gray-400"
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading tickets...
+                  </div>
+                </td>
+              </tr>
+            ) : sortedTickets.length === 0 ? (
+              /* Empty State */
               <tr>
                 <td
                   colSpan={columns.length}
@@ -470,6 +690,7 @@ export default function TicketsTable() {
                 </td>
               </tr>
             ) : (
+              /* Ticket Rows */
               sortedTickets.map((ticket) => (
                 <tr
                   key={ticket.TicketID}
@@ -490,16 +711,37 @@ export default function TicketsTable() {
         </table>
       </div>
 
+      {/* Download Confirmation Dialog */}
       {confirmDownloadOpen && (
         <DownloadConfirmDialog
           rowCount={sortedTickets.length}
           totalCount={tickets.length}
-          isFiltered={activeFilterCount > 0}
+          isFiltered={activeFilterCount > 0 || !!groupFilter.bucket}
           isDownloading={isDownloading}
           onCancel={() => setConfirmDownloadOpen(false)}
           onConfirm={performDownload}
         />
       )}
+    </div>
+  );
+}
+
+// useSearchParams requires a Suspense boundary in the App Router.
+export default function TicketsTable() {
+  return (
+    <Suspense fallback={<TicketsTableFallback />}>
+      <TicketsTableInner />
+    </Suspense>
+  );
+}
+
+function TicketsTableFallback() {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 shadow-md px-6 py-16 text-center text-sm text-gray-400">
+      <div className="flex items-center justify-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading tickets...
+      </div>
     </div>
   );
 }
@@ -534,8 +776,7 @@ function DownloadConfirmDialog({
             </>
           ) : (
             <>
-              This will download all{" "}
-              <span className="font-medium text-gray-900">{rowCount}</span> ticket
+              This will download all <span className="font-medium text-gray-900">{rowCount}</span> ticket
               {rowCount !== 1 ? "s" : ""} as an <span className="font-medium text-gray-900">.xlsx</span> file.
             </>
           )}
@@ -624,9 +865,7 @@ function ColumnFilterPopover({
       {filter.kind === "boolean" && (
         <select
           value={filter.value}
-          onChange={(e) =>
-            onChange({ kind: "boolean", value: e.target.value as "all" | "yes" | "no" })
-          }
+          onChange={(e) => onChange({ kind: "boolean", value: e.target.value as "all" | "yes" | "no" })}
           className={inputBase}
         >
           <option value="all">All</option>
@@ -666,7 +905,7 @@ function ColumnFilterPopover({
 
           <div className="space-y-2">
             <label className="block text-[11px] font-medium text-gray-500">
-              From: 
+              From:
               <input
                 type="date"
                 value={filter.from}
@@ -675,7 +914,7 @@ function ColumnFilterPopover({
               />
             </label>
             <label className="block text-[11px] font-medium text-gray-500">
-              To: 
+              To:
               <input
                 type="date"
                 value={filter.to}
@@ -688,10 +927,7 @@ function ColumnFilterPopover({
       )}
 
       <div className="mt-3 flex justify-between border-t border-gray-100 pt-2">
-        <button
-          onClick={onClear}
-          className="text-[11px] font-medium text-gray-500 hover:text-gray-800"
-        >
+        <button onClick={onClear} className="text-[11px] font-medium text-gray-500 hover:text-gray-800">
           Clear
         </button>
         <button

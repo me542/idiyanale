@@ -20,6 +20,7 @@ export interface CategoryItem {
   label: string;
   pct: number;
   color: string;
+  count: number; 
 }
 
 export interface DueActivityItem {

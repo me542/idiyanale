@@ -120,9 +120,8 @@ export function InformationPanel({
           firstName: user.first_name || "",
           lastName: user.last_name || "",
           email: user.email || "",
-          institution:
-            user.institution?.institution_name || "",
-          position: String(user.job_position_id || ""),
+          institution: user.institution?.institution_name || "",
+          position: user.job_position?.job_position_name || "",
           role: user.role?.role_name || "",
         });
       } catch (error) {

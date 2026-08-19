@@ -17,6 +17,11 @@ export interface UserInstitution {
   institution_name: string;
 }
 
+export interface UserJobPosition {
+  job_position_id: number;
+  job_position_name: string;
+}
+
 export interface UserDetails {
   id: number;
   username: string;
@@ -27,7 +32,10 @@ export interface UserDetails {
   phone_no: string;
   institution_id: number;
   institution: UserInstitution;
+
   job_position_id: number;
+  job_position: UserJobPosition;
+
   role: UserRole;
   status: string;
   last_login?: string;

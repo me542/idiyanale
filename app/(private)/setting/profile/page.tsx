@@ -40,7 +40,6 @@ export default function Page() {
         />
         <InformationPanel
           activeNav={activeNav}
-          workInfo={workInfo}
           kpi={kpi}
         />
       </div>
