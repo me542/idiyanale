@@ -38,6 +38,6 @@ export async function getUsersByInstitutionId(
   institutionId: number | string
 ) {
   return get<User[]>(
-    ApiEndpoint.GET_USERS_BY_INSTITUTION_ID(institutionId)
+    ApiEndpoint.GET_USER_BY_INSTI_U(institutionId)
   );
 }
