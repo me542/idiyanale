@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createInstitution } from "../../../../services/integration/institution/post-add-insti"; // adjust path to wherever you place create-insti.ts
+import { addInstitution } from "../../../../services/integration/institution/post-add-insti";
 import { getInstitutions, InstitutionResp } from "../../../../services/integration/institution/get-all-insti"; // adjust path to wherever you place get-insti.ts
 import { editInstitution } from "../../../../services/integration/institution/post-edit-insti-id"; // adjust path to wherever you place edit-insti.ts
 
@@ -49,8 +49,8 @@ function mapFromApi(row: InstitutionResp): Institution {
     description: row.description,
     color: DEFAULT_COLOR,
     logo: null,
-    status: "active",
-    createdAt: row.createdAt,
+    status: (row.status === "inactive" ? "inactive" : "active") as Status,
+    createdAt: row.created_at ?? "",
   };
 }
 
@@ -65,8 +65,8 @@ export default function InstitutionManagementPage() {
     setIsLoadingList(true);
     setListError(null);
     try {
-      const rows = await getInstitutions();
-      setInstitutions((rows ?? []).map(mapFromApi));
+      const result = await getInstitutions();
+      setInstitutions((result.response ?? []).map(mapFromApi));
     } catch (err) {
       setListError(
         err instanceof Error ? err.message : "Failed to load institutions."
@@ -139,7 +139,7 @@ export default function InstitutionManagementPage() {
     try {
       // Backend (AddInstitution) only accepts these three fields today —
       // logo/color/status are UI-only until the create endpoint supports them.
-      await createInstitution({
+      await addInstitution({
         institution_code: code.trim(),
         institution_name: name.trim(),
         description: description.trim(),
