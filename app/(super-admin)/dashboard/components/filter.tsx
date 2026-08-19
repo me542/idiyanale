@@ -25,9 +25,9 @@ const Filter: React.FC<FilterProps> = ({ onFilterChange }) => {
       setIsLoadingInstitutions(true);
       setInstitutionsError(null);
       try {
-        const rows = await getInstitutions();
+        const result = await getInstitutions();
         if (cancelled) return;
-        setInstitutions(['ALL', ...rows.map((r) => r.institution_name)]);
+        setInstitutions(['ALL', ...(result.response ?? []).map((r) => r.institution_name)]);
       } catch (err) {
         if (cancelled) return;
         setInstitutionsError(
