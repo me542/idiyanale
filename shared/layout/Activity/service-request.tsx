@@ -1,7 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { RefreshCw, Upload, X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import {
+    RefreshCw,
+    Upload,
+    X,
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+    List,
+    Type,
+} from "lucide-react";
 import { CreateTicketError } from "@/shared/layout/Activity/api/create-sr";
 import { createTicket, CreateTicketRequest } from "@/services/integration/ticket/post_ticket"; // adjust path to match your project
 import { getCategories, CategoryResp } from "@/services/integration/insti-admin/get_all_category"; // adjust path to match your project
@@ -23,7 +33,7 @@ export interface NewTicketFormData {
     approverPoolId: string;
     duration: string;
     subject: string;
-    description: string;
+    description: string; // stored as HTML so bold/italic/etc. survive submission
 }
 
 export const EMPTY_TICKET_FORM: NewTicketFormData = {
@@ -138,6 +148,41 @@ function SelectField({
     );
 }
 
+/**
+ * Small formatting-toolbar button. Mirrors the ToolbarBtn used in
+ * TicketDetailPanel's remarks editor so the two rich-text areas look and
+ * behave the same way.
+ */
+function ToolbarBtn({
+    children,
+    "aria-label": ariaLabel,
+    onClick,
+    active = false,
+}: {
+    children: React.ReactNode;
+    "aria-label": string;
+    onClick?: () => void;
+    active?: boolean;
+}) {
+    return (
+        <button
+            type="button"
+            aria-label={ariaLabel}
+            title={ariaLabel}
+            aria-pressed={active}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onClick}
+            className={`p-1.5 rounded-md transition-colors ${
+                active
+                    ? "bg-[#1E4637] text-white"
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-200"
+            }`}
+        >
+            {children}
+        </button>
+    );
+}
+
 const DURATION_OPTIONS: SelectOption[] = [
     { id: "30", label: "30 Days" },
     { id: "60", label: "60 Days" },
@@ -212,10 +257,15 @@ export default function NewTicketPanelView({
     const [subcategoryDetails, setSubcategoryDetails] = useState<SubCategoryResp[]>([]);
 
     // Institution resolved from the logged-in user's JWT.
+    // NOTE: this still scopes Endorsers (per the getUsersByInstitutionId
+    // call below). Resolver Groups are now scoped to the user-selected
+    // Institution Pool instead — see form.approverPoolId below.
     const [institutionId, setInstitutionId] = useState<number | null>(null);
 
-    // Endorser options come from getUsersByInstitutionId (role.can_endorse).
-    // Resolver options come from getResolverGroups, scoped to institution.
+    // Endorser options come from getUsersByInstitutionId (role.can_endorse),
+    // scoped to institutionId (JWT).
+    // Resolver options come from getResolverGroups, scoped to whichever
+    // Institution Pool the user has selected (form.approverPoolId).
     const [endorserOptions, setEndorserOptions] = useState<SelectOption[]>([]);
     const [resolverOptions, setResolverOptions] = useState<SelectOption[]>([]);
     const [usersLoading, setUsersLoading] = useState(false);
@@ -223,10 +273,103 @@ export default function NewTicketPanelView({
 
     // Institution Pool options — this is the "institutionPool" field the
     // backend requires on submit. Independent of the JWT-derived
-    // institutionId above (that one scopes endorsers/resolvers; this one
+    // institutionId above (that one scopes endorsers; this one
     // is the full list the requester picks from for the ticket itself).
+    // Resolver Groups are filtered against whichever pool is selected here.
     const [institutionPoolOptions, setInstitutionPoolOptions] = useState<SelectOption[]>([]);
     const [institutionPoolLoading, setInstitutionPoolLoading] = useState(false);
+
+    // ---------------------------------------------------------------
+    // Rich-text editors (bold / italic / underline / etc.) for every
+    // free-typed field — Subject and Description. Both are contentEditable
+    // divs driven by execCommand, with form state holding the resulting
+    // HTML so formatting survives submission. Select/date fields are left
+    // alone since "formatting" doesn't apply to picking an option.
+    // ---------------------------------------------------------------
+    type RichFieldKey = "subject" | "description";
+
+    const subjectRef = useRef<HTMLDivElement | null>(null);
+    const descriptionRef = useRef<HTMLDivElement | null>(null);
+
+    const richFieldRefs: Record<RichFieldKey, React.RefObject<HTMLDivElement | null>> = {
+        subject: subjectRef,
+        description: descriptionRef,
+    };
+
+    const [showFormatBar, setShowFormatBar] = useState<Record<RichFieldKey, boolean>>({
+        subject: false,
+        description: false,
+    });
+
+    const [isFieldEmpty, setIsFieldEmpty] = useState<Record<RichFieldKey, boolean>>({
+        subject: true,
+        description: true,
+    });
+
+    const emptyFormats = {
+        bold: false,
+        italic: false,
+        underline: false,
+        strikeThrough: false,
+        insertUnorderedList: false,
+    };
+
+    const [activeFormats, setActiveFormats] = useState<
+        Record<RichFieldKey, Record<string, boolean>>
+    >({
+        subject: { ...emptyFormats },
+        description: { ...emptyFormats },
+    });
+
+    function refreshActiveFormats(field: RichFieldKey) {
+        setActiveFormats((prev) => ({
+            ...prev,
+            [field]: {
+                bold: document.queryCommandState("bold"),
+                italic: document.queryCommandState("italic"),
+                underline: document.queryCommandState("underline"),
+                strikeThrough: document.queryCommandState("strikeThrough"),
+                insertUnorderedList: document.queryCommandState("insertUnorderedList"),
+            },
+        }));
+    }
+
+    function execFieldFormat(field: RichFieldKey, command: string, value?: string) {
+        richFieldRefs[field].current?.focus();
+        document.execCommand(command, false, value);
+        // queryCommandState can lag a tick behind execCommand in some
+        // browsers, so defer the read to the next microtask/frame.
+        setTimeout(() => refreshActiveFormats(field), 0);
+    }
+
+    function handleFieldInput(field: RichFieldKey) {
+        const el = richFieldRefs[field].current;
+        const html = el?.innerHTML ?? "";
+        const text = el?.innerText ?? "";
+
+        setIsFieldEmpty((prev) => ({ ...prev, [field]: text.trim().length === 0 }));
+        setForm((prev) => ({ ...prev, [field]: html }));
+        refreshActiveFormats(field);
+    }
+
+    // Keep toolbar active-state in sync when the caret moves via click or
+    // arrow keys, not just when typing — for whichever rich field has focus.
+    useEffect(() => {
+        function handleSelectionChange() {
+            const sel = window.getSelection();
+            if (!sel) return;
+            const anchor = sel.anchorNode;
+
+            (Object.keys(richFieldRefs) as RichFieldKey[]).forEach((field) => {
+                const el = richFieldRefs[field].current;
+                if (el && anchor && el.contains(anchor)) {
+                    refreshActiveFormats(field);
+                }
+            });
+        }
+        document.addEventListener("selectionchange", handleSelectionChange);
+        return () => document.removeEventListener("selectionchange", handleSelectionChange);
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -329,7 +472,7 @@ export default function NewTicketPanelView({
     }, []);
 
     // Decode the JWT once on mount to find which institution to scope
-    // the endorser/resolver lookups to.
+    // the endorser lookup to.
     useEffect(() => {
         let cancelled = false;
 
@@ -338,7 +481,7 @@ export default function NewTicketPanelView({
 
             if (!token) {
                 if (!cancelled) {
-                    setError("You must be logged in to load endorsers and resolvers.");
+                    setError("You must be logged in to load endorsers.");
                 }
                 return;
             }
@@ -365,8 +508,7 @@ export default function NewTicketPanelView({
     }, []);
 
     // Once we know the institution, fetch its users and pull out endorsers
-    // (role.can_endorse). Resolvers now come from getResolverGroups instead
-    // of individual users — see the resolver group effect below.
+    // (role.can_endorse).
     useEffect(() => {
         let cancelled = false;
 
@@ -412,12 +554,19 @@ export default function NewTicketPanelView({
         };
     }, [institutionId]);
 
-    // Resolver options now come from resolver groups instead of individual
-    // users, scoped to the same institution resolved from the JWT.
+    // Resolver options are scoped to whichever Institution Pool the user
+    // has selected (form.approverPoolId) — NOT the JWT-derived
+    // institutionId. Re-fetches/re-filters whenever the pool selection
+    // changes, and clears out if no pool is selected yet.
     useEffect(() => {
         let cancelled = false;
 
-        if (!institutionId) return;
+        if (!form.approverPoolId) {
+            setResolverOptions([]);
+            return;
+        }
+
+        const selectedPoolId = Number(form.approverPoolId);
 
         const fetchResolverGroups = async () => {
             setResolverGroupsLoading(true);
@@ -429,7 +578,7 @@ export default function NewTicketPanelView({
                     .filter(
                         (g: ResolverGroup) =>
                             g.status === "active" &&
-                            g.institution_id === institutionId
+                            g.institution_id === selectedPoolId
                     )
                     .map((g: ResolverGroup) => ({
                         id: String(g.resolver_group_id),
@@ -455,7 +604,7 @@ export default function NewTicketPanelView({
         return () => {
             cancelled = true;
         };
-    }, [institutionId]);
+    }, [form.approverPoolId]);
 
     // Categories depend on the resolved ticket type, so wait for
     // form.ticketTypeId to be populated by the ticket-type fetch above.
@@ -564,6 +713,16 @@ export default function NewTicketPanelView({
         }));
     };
 
+    // Institution Pool changed: clear the now-stale resolver selection,
+    // since resolver groups are scoped to the pool.
+    const handleInstitutionPoolChange = (value: string) => {
+        setForm((prev) => ({
+            ...prev,
+            approverPoolId: value,
+            resolver: "",
+        }));
+    };
+
     // Subcategory changed: pull subject/description/duration off the
     // matching record so "Reload Template" has something to load.
     const handleSubcategoryChange = (value: string) => {
@@ -578,15 +737,38 @@ export default function NewTicketPanelView({
             (sc) => String(sc.sub_category_id) === form.subcategoryId
         );
 
+        const nextDescription = selected?.description || "";
+        // Subject only gets overwritten by the template when the template
+        // actually has one — otherwise leave whatever the user typed.
+        const nextSubject = selected?.subject_name || form.subject;
+
+        // Both editors are contentEditable, so their DOM content isn't
+        // driven by React's `value` prop — push the template text into
+        // them directly, same as we do for form state.
+        if (descriptionRef.current) {
+            descriptionRef.current.innerHTML = nextDescription;
+        }
+        if (subjectRef.current && selected?.subject_name) {
+            subjectRef.current.innerHTML = nextSubject;
+        }
+
+        setIsFieldEmpty((prev) => ({
+            ...prev,
+            description: nextDescription.trim().length === 0,
+            subject: selected?.subject_name
+                ? nextSubject.trim().length === 0
+                : prev.subject,
+        }));
+
         if (!selected) {
-            updateField("description")("");
+            setForm((prev) => ({ ...prev, description: "" }));
             return;
         }
 
         setForm((prev) => ({
             ...prev,
-            subject: selected.subject_name || prev.subject,
-            description: selected.description || "",
+            subject: nextSubject,
+            description: nextDescription,
             duration: selected.has_duration
                 ? String(selected.duration_days)
                 : prev.duration,
@@ -634,6 +816,19 @@ export default function NewTicketPanelView({
         setError(null);
         setSubcategoryOptions([]);
         setSubcategoryDetails([]);
+
+        if (descriptionRef.current) {
+            descriptionRef.current.innerHTML = "";
+        }
+        if (subjectRef.current) {
+            subjectRef.current.innerHTML = "";
+        }
+        setIsFieldEmpty({ subject: true, description: true });
+        setShowFormatBar({ subject: false, description: false });
+        setActiveFormats({
+            subject: { ...emptyFormats },
+            description: { ...emptyFormats },
+        });
     };
 
     const handleCancel = () => {
@@ -656,7 +851,7 @@ export default function NewTicketPanelView({
         if (!form.subcategoryId) missing.push("Subcategory");
         if (!form.endorserId) missing.push("Endorser");
         if (!form.resolver) missing.push("Resolver");
-        if (!form.subject) missing.push("Subject");
+        if (isFieldEmpty.subject) missing.push("Subject");
 
         if (missing.length > 0) {
             setError(`Missing required field(s): ${missing.join(", ")}`);
@@ -756,7 +951,9 @@ export default function NewTicketPanelView({
                             disabled={ticketTypeLoading}
                         />
 
-                        {/* Institution Pool — required by the API as "institutionPool" */}
+                        {/* Institution Pool — required by the API as "institutionPool".
+                            Changing this now also clears the Resolver selection, since
+                            Resolver Groups are filtered against this pool. */}
                         <SelectField
                             label={
                                 institutionPoolLoading
@@ -764,7 +961,7 @@ export default function NewTicketPanelView({
                                     : "Institution Pool"
                             }
                             value={form.approverPoolId}
-                            onChange={updateField("approverPoolId")}
+                            onChange={handleInstitutionPoolChange}
                             options={institutionPoolOptions}
                             disabled={institutionPoolLoading}
                         />
@@ -895,7 +1092,8 @@ export default function NewTicketPanelView({
                             options={DURATION_OPTIONS}
                         />
 
-                        {/* Resolver — now backed by resolver groups, not individual users */}
+                        {/* Resolver — now scoped to the selected Institution Pool.
+                            Disabled until a pool is chosen. */}
                         <SelectField
                             label={
                                 resolverGroupsLoading
@@ -905,7 +1103,7 @@ export default function NewTicketPanelView({
                             value={form.resolver}
                             onChange={updateField("resolver")}
                             options={resolverOptions}
-                            disabled={resolverGroupsLoading}
+                            disabled={!form.approverPoolId || resolverGroupsLoading}
                         />
                     </div>
                 </div>
@@ -939,35 +1137,100 @@ export default function NewTicketPanelView({
 
                         {/* Subject */}
                         <div className="mb-4">
-                            <label className="block text-xs font-bold text-[#1E4637] mb-1">
-                                Subject:
-                            </label>
+                            <div className="flex items-center justify-between mb-1">
+                                <label className="block text-xs font-bold text-[#1E4637]">
+                                    Subject:
+                                </label>
+                            </div>
 
-                            <input
-                                type="text"
-                                value={form.subject}
-                                onChange={(e) =>
-                                    updateField("subject")(
-                                        e.target.value
-                                    )
-                                }
-                                placeholder="Brief summary of the ticket"
+                            <div
                                 className="
-                                    w-full
                                     border
                                     border-gray-200
                                     rounded-lg
-                                    px-2.5
-                                    py-1.5
                                     bg-transparent
-                                    text-sm
-                                    text-gray-700
-                                    focus:outline-none
-                                    focus:ring-2
-                                    focus:ring-[#1E4637]/30
-                                    placeholder:text-gray-300
+                                    overflow-hidden
+                                    focus-within:ring-2
+                                    focus-within:ring-[#1E4637]/30
                                 "
-                            />
+                            >
+                                {showFormatBar.subject && (
+                                    <div className="flex items-center gap-0.5 px-2 pt-2 pb-1.5 border-b border-gray-200">
+                                        <ToolbarBtn
+                                            aria-label="Bold"
+                                            active={activeFormats.subject.bold}
+                                            onClick={() => execFieldFormat("subject", "bold")}
+                                        >
+                                            <Bold size={13} strokeWidth={2.5} />
+                                        </ToolbarBtn>
+                                        <ToolbarBtn
+                                            aria-label="Italic"
+                                            active={activeFormats.subject.italic}
+                                            onClick={() => execFieldFormat("subject", "italic")}
+                                        >
+                                            <Italic size={13} />
+                                        </ToolbarBtn>
+                                        <ToolbarBtn
+                                            aria-label="Underline"
+                                            active={activeFormats.subject.underline}
+                                            onClick={() => execFieldFormat("subject", "underline")}
+                                        >
+                                            <Underline size={13} />
+                                        </ToolbarBtn>
+                                        <ToolbarBtn
+                                            aria-label="Strikethrough"
+                                            active={activeFormats.subject.strikeThrough}
+                                            onClick={() => execFieldFormat("subject", "strikeThrough")}
+                                        >
+                                            <Strikethrough size={13} />
+                                        </ToolbarBtn>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-1 px-1">
+                                    <div
+                                        ref={subjectRef}
+                                        contentEditable
+                                        suppressContentEditableWarning
+                                        onInput={() => handleFieldInput("subject")}
+                                        onKeyUp={() => refreshActiveFormats("subject")}
+                                        onMouseUp={() => refreshActiveFormats("subject")}
+                                        onFocus={() => refreshActiveFormats("subject")}
+                                        data-placeholder="Brief summary of the ticket"
+                                        className="
+                                            flex-1
+                                            min-h-[2rem]
+                                            px-1.5
+                                            py-1.5
+                                            text-sm
+                                            text-gray-700
+                                            outline-none
+                                            empty:before:content-[attr(data-placeholder)]
+                                            empty:before:text-gray-300
+                                        "
+                                    ></div>
+
+                                    <button
+                                        type="button"
+                                        aria-label="Toggle subject formatting"
+                                        title="Formatting options"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() =>
+                                            setShowFormatBar((prev) => ({
+                                                ...prev,
+                                                subject: !prev.subject,
+                                            }))
+                                        }
+                                        className={`shrink-0 p-1.5 rounded-lg transition-colors ${
+                                            showFormatBar.subject
+                                                ? "bg-[#1E4637] text-white"
+                                                : "text-gray-400 hover:text-gray-600 hover:bg-gray-200"
+                                        }`}
+                                    >
+                                        <Type size={14} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Description */}
@@ -1000,32 +1263,112 @@ export default function NewTicketPanelView({
                                 </button>
                             </div>
 
-                            <textarea
-                                value={form.description}
-                                onChange={(e) =>
-                                    updateField("description")(
-                                        e.target.value
-                                    )
-                                }
-                                placeholder="Describe the request in detail..."
+                            {/* Rich-text description editor — same bold / italic /
+                                underline / strikethrough / bullet-list toolbar as
+                                the Remarks box in TicketDetailPanel. */}
+                            <div
                                 className="
-                                    w-full
                                     flex-1
-                                    resize-none
+                                    flex
+                                    flex-col
                                     border
                                     border-gray-200
                                     rounded-lg
-                                    px-2.5
-                                    py-1.5
                                     bg-transparent
-                                    text-sm
-                                    text-gray-700
-                                    focus:outline-none
-                                    focus:ring-2
-                                    focus:ring-[#1E4637]/30
-                                    placeholder:text-gray-300
+                                    overflow-hidden
+                                    focus-within:ring-2
+                                    focus-within:ring-[#1E4637]/30
                                 "
-                            />
+                            >
+                                {/* Formatting toolbar — shown only when toggled */}
+                                {showFormatBar.description && (
+                                    <div className="flex items-center gap-0.5 px-2 pt-2 pb-1.5 border-b border-gray-200">
+                                        <ToolbarBtn
+                                            aria-label="Bold"
+                                            active={activeFormats.description.bold}
+                                            onClick={() => execFieldFormat("description", "bold")}
+                                        >
+                                            <Bold size={13} strokeWidth={2.5} />
+                                        </ToolbarBtn>
+                                        <ToolbarBtn
+                                            aria-label="Italic"
+                                            active={activeFormats.description.italic}
+                                            onClick={() => execFieldFormat("description", "italic")}
+                                        >
+                                            <Italic size={13} />
+                                        </ToolbarBtn>
+                                        <ToolbarBtn
+                                            aria-label="Underline"
+                                            active={activeFormats.description.underline}
+                                            onClick={() => execFieldFormat("description", "underline")}
+                                        >
+                                            <Underline size={13} />
+                                        </ToolbarBtn>
+                                        <ToolbarBtn
+                                            aria-label="Strikethrough"
+                                            active={activeFormats.description.strikeThrough}
+                                            onClick={() => execFieldFormat("description", "strikeThrough")}
+                                        >
+                                            <Strikethrough size={13} />
+                                        </ToolbarBtn>
+                                        <div className="w-px h-4 bg-gray-300 mx-1" />
+                                        <ToolbarBtn
+                                            aria-label="Bullet list"
+                                            active={activeFormats.description.insertUnorderedList}
+                                            onClick={() => execFieldFormat("description", "insertUnorderedList")}
+                                        >
+                                            <List size={13} />
+                                        </ToolbarBtn>
+                                    </div>
+                                )}
+
+                                {/* Contenteditable editor */}
+                                <div
+                                    ref={descriptionRef}
+                                    contentEditable
+                                    suppressContentEditableWarning
+                                    onInput={() => handleFieldInput("description")}
+                                    onKeyUp={() => refreshActiveFormats("description")}
+                                    onMouseUp={() => refreshActiveFormats("description")}
+                                    onFocus={() => refreshActiveFormats("description")}
+                                    data-placeholder="Describe the request in detail..."
+                                    className="
+                                        flex-1
+                                        min-h-[120px]
+                                        overflow-y-auto
+                                        px-2.5
+                                        py-1.5
+                                        text-sm
+                                        text-gray-700
+                                        outline-none
+                                        empty:before:content-[attr(data-placeholder)]
+                                        empty:before:text-gray-300
+                                    "
+                                ></div>
+
+                                {/* Format toggle */}
+                                <div className="flex items-center justify-end px-2 pb-1.5">
+                                    <button
+                                        type="button"
+                                        aria-label="Toggle formatting"
+                                        title="Formatting options"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() =>
+                                            setShowFormatBar((prev) => ({
+                                                ...prev,
+                                                description: !prev.description,
+                                            }))
+                                        }
+                                        className={`p-1.5 rounded-lg transition-colors ${
+                                            showFormatBar.description
+                                                ? "bg-[#1E4637] text-white"
+                                                : "text-gray-400 hover:text-gray-600 hover:bg-gray-200"
+                                        }`}
+                                    >
+                                        <Type size={14} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

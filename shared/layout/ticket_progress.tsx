@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
     X, Check, MessageSquare, Paperclip, Send,
     Bold, Italic, Underline, Strikethrough, List, Type,
+    ClipboardList,
 } from "lucide-react";
 import { InstitutionTicket, TicketUser } from "@/services/integration/ticket/get_all_ticket_by_insti";
 
@@ -13,7 +14,11 @@ interface ApprovalStep {
     status: string;
     timestamp?: string;
     duration?: string;
-    pending?: boolean; // true = this is the current, not-yet-completed step
+    pending?: boolean;
+    /** Resolver-only: which of the 4 sub-states this row is in. Drives which
+     * action-button pair renders (ACCEPT/REJECT vs RESOLVED/HOLD vs
+     * REJECT/RESUME) and whether the avatar shows initials or is blank. */
+    resolverPhase?: "for_review" | "in_progress" | "on_hold" | "resolved";
 }
 
 interface TicketDetailPanelProps {
@@ -22,6 +27,12 @@ interface TicketDetailPanelProps {
     onOpen: () => void;
     onClose: () => void;
     onSendRemark?: (ticketId: string, message: string) => void;
+    onAcceptStep?: (stepId: string) => void;
+    onRejectStep?: (stepId: string) => void;
+    /** New: pause an in-progress resolver step. */
+    onHoldStep?: (stepId: string) => void;
+    /** New: resume a resolver step that's on hold. */
+    onResumeStep?: (stepId: string) => void;
 }
 
 const PROGRESS_STEPS = [
@@ -58,6 +69,15 @@ function formatDate(value: string | null | undefined): string | undefined {
     });
 }
 
+// Formats a millisecond duration as "MM:SSs" to match the "01:32s" style
+// shown for in-progress / resolved resolver rows.
+function formatElapsed(ms: number): string {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}s`;
+}
+
 // Maps ticket.status to how many of PROGRESS_STEPS are "done".
 // Grouped the same way as getStatusStyle in DueActivity — keep these two in sync.
 function getCompletedSteps(status: string): number {
@@ -69,6 +89,7 @@ function getCompletedSteps(status: string): number {
         case "resolved":
             return 5;
         case "in progress":
+        case "on hold":
             return 4;
         case "approved":
         case "for assignment":
@@ -82,6 +103,26 @@ function getCompletedSteps(status: string): number {
         default:
             return 0;
     }
+}
+
+// Determines which of the 4 resolver sub-states to show. Prefers an explicit
+// `ticket.resolver_status` field if the API provides one; otherwise falls
+// back to inferring it from `ticket.status` / completedSteps. Adjust the
+// field name here once the real ticket model is confirmed.
+function getResolverPhase(
+    ticket: InstitutionTicket,
+    completedSteps: number
+): ApprovalStep["resolverPhase"] {
+    const explicit = (ticket as { resolver_status?: string }).resolver_status;
+    if (explicit === "for_review" || explicit === "in_progress" || explicit === "on_hold" || explicit === "resolved") {
+        return explicit;
+    }
+
+    if (completedSteps >= 5) return "resolved";
+    if (ticket.status?.toLowerCase().trim() === "on hold") return "on_hold";
+    if (completedSteps >= 4) return "in_progress";
+    // Approved but resolver hasn't accepted the assignment yet.
+    return "for_review";
 }
 
 function approvalChainFromTicket(ticket: InstitutionTicket, completedSteps: number): ApprovalStep[] {
@@ -125,17 +166,28 @@ function approvalChainFromTicket(ticket: InstitutionTicket, completedSteps: numb
         });
     }
 
-    // Resolver — stays hidden until the ticket has been approved.
-    if (ticket.resolver && completedSteps >= 3) {
-        const isDone = completedSteps >= 5;
+    // Resolver — stays hidden until the ticket has been approved. Has 4
+    // sub-states instead of a simple pending/done toggle: for_review (not
+    // yet accepted, blank avatar) -> in_progress (accepted, live timer) ->
+    // on_hold (paused) -> resolved (final, with total duration).
+    if (completedSteps >= 3 && (ticket.resolver || getResolverPhase(ticket, completedSteps) === "for_review")) {
+        const phase = getResolverPhase(ticket, completedSteps);
+        const isResolved = phase === "resolved";
+        const isForReview = phase === "for_review";
+
         steps.push({
             id: "resolved",
-            name: fullName(ticket.resolver)!,
-            initials: initials(ticket.resolver),
-            status: isDone ? "RESOLVED" : "IN PROGRESS",
-            timestamp: isDone ? formatDate(ticket.resolved_at) : undefined,
-            duration: isDone ? (ticket.resolution_time || undefined) : undefined,
-            pending: !isDone,
+            name: isForReview ? "" : (fullName(ticket.resolver) ?? ""),
+            initials: isForReview ? "" : initials(ticket.resolver),
+            status:
+                phase === "resolved" ? "RESOLVED" :
+                phase === "on_hold" ? "ON HOLD" :
+                phase === "in_progress" ? "IN PROGRESS" :
+                "FOR REVIEW",
+            timestamp: isResolved ? formatDate(ticket.resolved_at) : undefined,
+            duration: isResolved ? (ticket.resolution_time || undefined) : undefined,
+            pending: phase !== "resolved",
+            resolverPhase: phase,
         });
     }
 
@@ -152,6 +204,10 @@ export default function TicketDetailPanel({
     isOpen,
     onClose,
     onSendRemark,
+    onAcceptStep,
+    onRejectStep,
+    onHoldStep,
+    onResumeStep,
 }: TicketDetailPanelProps) {
     const [showFormatBar, setShowFormatBar] = useState(false);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -166,6 +222,14 @@ export default function TicketDetailPanel({
         strikeThrough: false,
         insertUnorderedList: false,
     });
+    // Live "MM:SSs" ticker for an in-progress resolver step. Recomputed every
+    // second from the resolver's start time so it counts up like the mock.
+    const [elapsedTick, setElapsedTick] = useState(0);
+
+    useEffect(() => {
+        const id = setInterval(() => setElapsedTick((t) => t + 1), 1000);
+        return () => clearInterval(id);
+    }, []);
 
     // Reflects the current selection's formatting state onto the toolbar
     // so active buttons (bold/italic/etc.) show as "on".
@@ -252,8 +316,8 @@ export default function TicketDetailPanel({
     if (!ticket && !isOpen) return null;
 
     const ticketId = ticket?.ticket_id ?? "—";
-const completedSteps = ticket ? getCompletedSteps(ticket.status) : 0;
-const approvalChain = ticket ? approvalChainFromTicket(ticket, completedSteps) : [];
+    const completedSteps = ticket ? getCompletedSteps(ticket.status) : 0;
+    const approvalChain = ticket ? approvalChainFromTicket(ticket, completedSteps) : [];
 
     // NOTE: InstitutionTicket has no remarks/attachment fields yet.
     const remarks: {
@@ -277,7 +341,10 @@ const approvalChain = ticket ? approvalChainFromTicket(ticket, completedSteps) :
             >
                 {/* Header */}
                 <div className="h-20 flex items-center justify-between px-6 border-b border-gray-100 shrink-0 bg-white">
-                    <span className="font-bold text-[#1E4637] tracking-wide">{ticketId}</span>
+                    <span className="flex items-center gap-2 font-bold text-[#1E4637] tracking-wide">
+                    <ClipboardList size={20} />
+                    <span>Ticket Details</span>
+                    </span>
                     <button
                         onClick={onClose}
                         aria-label="Close ticket panel"
@@ -393,42 +460,169 @@ const approvalChain = ticket ? approvalChainFromTicket(ticket, completedSteps) :
                                         </div>
                                     ) : (
                                         <div className="flex flex-col">
-                                            {approvalChain.map((step, i) => (
-    <div
-        key={step.id}
-        className={`flex items-center justify-between py-3 ${
-            i < approvalChain.length - 1 ? "border-b border-gray-100" : ""
-        }`}
-    >
-        <div className="flex items-center gap-3">
-            <div
-                className={`w-11 h-11 rounded-full text-white flex items-center justify-center font-bold text-sm shrink-0 ${
-                    step.pending ? "bg-gray-400" : "bg-[#1E4637]"
-                }`}
-            >
-                {step.initials}
-            </div>
-            <div>
-                <div className="font-semibold text-sm text-[#1E4637]">
-                    {step.name}
-                </div>
-                <div className="text-xs text-gray-400">
-                    {step.timestamp || (step.pending ? "Pending" : "—")}
-                </div>
-            </div>
-        </div>
-        <span
-            className={`text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap text-white ${
-                step.pending ? "bg-amber-400" : "bg-emerald-400"
-            }`}
-        >
-            {step.status}
-            {step.duration && (
-                <span className="text-red-200 ml-1">{step.duration}</span>
-            )}
-        </span>
-    </div>
-))}
+                                            {approvalChain.map((step, i) => {
+                                                const isResolverRow = step.id === "resolved";
+                                                const phase = step.resolverPhase;
+
+                                                // Live elapsed label for the in-progress resolver row.
+                                                // Falls back to duration if available; otherwise just
+                                                // ticks up from 0 while `elapsedTick` re-renders it.
+                                                const inProgressLabel =
+                                                    phase === "in_progress"
+                                                        ? `In Progress: ${
+                                                              (ticket as { resolver_started_at?: string }).resolver_started_at
+                                                                  ? formatElapsed(
+                                                                        Date.now() -
+                                                                            new Date(
+                                                                                (ticket as { resolver_started_at?: string }).resolver_started_at!
+                                                                            ).getTime()
+                                                                    )
+                                                                  : formatElapsed(elapsedTick * 1000)
+                                                          }`
+                                                        : undefined;
+
+                                                return (
+                                                    <div
+                                                        key={step.id}
+                                                        className={`flex items-center justify-between py-3 gap-3 ${
+                                                            i < approvalChain.length - 1 ? "border-b border-gray-100" : ""
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div
+                                                                className={`w-11 h-11 rounded-full text-white flex items-center justify-center font-bold text-sm shrink-0 ${
+                                                                    phase === "for_review"
+                                                                        ? "bg-gray-300"
+                                                                        : step.pending
+                                                                        ? "bg-gray-400"
+                                                                        : "bg-[#1E4637]"
+                                                                }`}
+                                                            >
+                                                                {step.initials}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                {phase !== "for_review" && (
+                                                                    <div className="font-semibold text-sm text-[#1E4637] truncate">
+                                                                        {step.name}
+                                                                    </div>
+                                                                )}
+                                                                <div
+                                                                    className={`text-xs ${
+                                                                        phase === "on_hold" || phase === "for_review"
+                                                                            ? "font-bold uppercase tracking-wide text-amber-500"
+                                                                            : phase === "in_progress"
+                                                                            ? "font-semibold text-violet-500"
+                                                                            : "text-gray-400"
+                                                                    }`}
+                                                                >
+                                                                    {phase === "for_review"
+                                                                        ? "For Review"
+                                                                        : phase === "on_hold"
+                                                                        ? "On Hold"
+                                                                        : phase === "in_progress"
+                                                                        ? inProgressLabel
+                                                                        : (step.timestamp || "—")}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {isResolverRow && phase === "for_review" && (
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Accept assignment"
+                                                                    onClick={() => onAcceptStep?.(step.id)}
+                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    ACCEPT
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Reject assignment"
+                                                                    onClick={() => onRejectStep?.(step.id)}
+                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    REJECT
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {isResolverRow && phase === "in_progress" && (
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Mark ${step.name} resolved`}
+                                                                    onClick={() => onAcceptStep?.(step.id)}
+                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    RESOLVED
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Put ${step.name} on hold`}
+                                                                    onClick={() => onHoldStep?.(step.id)}
+                                                                    className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    HOLD
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {isResolverRow && phase === "on_hold" && (
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Reject ${step.name}`}
+                                                                    onClick={() => onRejectStep?.(step.id)}
+                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    REJECT
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Resume ${step.name}`}
+                                                                    onClick={() => onResumeStep?.(step.id)}
+                                                                    className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    RESUME
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {!isResolverRow && step.pending && (
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Accept ${step.name}`}
+                                                                    onClick={() => onAcceptStep?.(step.id)}
+                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    ACCEPT
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Reject ${step.name}`}
+                                                                    onClick={() => onRejectStep?.(step.id)}
+                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    REJECT
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {(!step.pending && phase !== "in_progress" && phase !== "on_hold" && phase !== "for_review") && (
+                                                            <span
+                                                                className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap text-white bg-emerald-400 shrink-0"
+                                                            >
+                                                                {step.status}
+                                                                {step.duration && (
+                                                                    <span className="text-emerald-100 ml-1">{step.duration}</span>
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -614,6 +808,3 @@ function ToolbarBtn({
         </button>
     );
 }
-
-
-
