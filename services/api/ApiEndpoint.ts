@@ -38,6 +38,7 @@ export const ApiEndpoint = {
   PATCH_TICKET_TYPE: (ticketTypeId: number | string) => `/api/v1/protected/edit-ticket-type-info/${ticketTypeId}`,
   PATCH_CATEGORY: (categoryId: number | string) => `/api/v1/protected/edit-category-info/${categoryId}`,
   PATCH_SUB_CATEGORY: (subCategoryId: number | string) => `/api/v1/protected/edit-sub-category-info/${subCategoryId}`,
+  PATCH_POSITION: (userId: number | string ) => `/api/v1/protected/user/${userId}/position`,
 
   // --------------------- USER ---------------------------
   POST_REGISTER_USER: "/api/v1/protected/register-user",
@@ -80,19 +81,19 @@ export const ApiEndpoint = {
   GET_TICKET_BY_TICKETID: (ticketId: number | string) => `/api/v1/ticket/get/${ticketId}`,
   
   // --------------------- REMARKS ----------------------------
-  POST_REMARKS: "/api/v1/remarks/add-options",
+  POST_REMARKS: "/api/v1/remark/add-options",
 
-  GET_REMARKS: "/api/v1/remarks/get",
+  GET_REMARKS: "/api/v1/remark/get",
 
-  PATCH_REMARKS: "/api/v1/remarks/edit",
+  PATCH_REMARKS: "/api/v1/remark/edit",
 
-  // --------------------- PROJECT ---------------------------\
+// --------------------- PROJECT ---------------------------
 
-  POST_CREATE_SERVER: "/api/v1/project/server/create",
-  POST_CREATE_PROJECT: "/api/v1/project/create",
+POST_CREATE_SERVER: "/api/v1/project/server/create",
+POST_CREATE_PROJECT: "/api/v1/project/create",
 
-  GET_SERVER_BY_ID: (serverId: number | string) => `/api/v1/project/get/server/${serverId}`,
-  GET_PROJECT_BY_ID: (projectId: number | string) => `/api/v1/project/get/${projectId}`,
-  GET_SERVER: "/api/v1/get/servers",
-  GET_PROJECT: (serverId: number | string) => `/api/v1/project/get/projects/${serverId}`,
+GET_SERVER_BY_ID: (serverId: number | string) => `/api/v1/project/get/server/${serverId}`,
+GET_PROJECT_BY_ID: (projectId: number | string) => `/api/v1/project/get/project/${projectId}`, // was /get/${projectId}
+GET_SERVER: "/api/v1/project/get/servers",
+GET_PROJECT: (serverId: number | string) => `/api/v1/project/get/projects/${serverId}`,
 };

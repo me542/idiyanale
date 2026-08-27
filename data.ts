@@ -1,10 +1,13 @@
 // shared/layout/mockData.ts
+import { profile } from "console";
 import {
   ListTodo,
   MessageCircleMore,
   Ticket,
-  Bolt,
+  BriefcaseBusiness,
   Newspaper,
+  LayoutDashboard,
+  User
 } from "lucide-react";
 
 
@@ -12,11 +15,17 @@ import {
 export const SIDEBAR_MENU = [
 
 	{
+		id: "dashboard",
+		label: "Dashboard",
+		icon: LayoutDashboard,
+		path: "/Dashboard",
+	},
+
+	{
 		id: "ticket",
 		label: "Ticket",
 		icon: Ticket,
 		children: [
-			{ label: "Dashboard", path: "/ticket/dashboard" },
 			{ label: "All Tickets", path: "/ticket/all-tickets" },
 			{ label: "Reports", path: "/ticket/reports" },
 		],
@@ -27,7 +36,6 @@ export const SIDEBAR_MENU = [
 		label: "Minor Task",
 		icon: ListTodo,
 		children: [
-			{ label: "Dashboard", path: "/minor-task/dashboard" },
 			{ label: "All Tasks", path: "/minor-task/all-tasks" },
 			{ label: "Reports", path: "/minor-task/reports" },
 		],
@@ -41,13 +49,20 @@ export const SIDEBAR_MENU = [
 	},
 
 	{
-		id: "settings",
-		label: "Settings",
-		icon: Bolt,
+		id: "profile",
+		label: "Profile",
+		icon: User,
+		path: "/profile",
+	},
+
+	{
+		id: "management",
+		label: "Management",
+		icon: BriefcaseBusiness,
 		children: [
-			{ label: "Profile", path: "/setting/profile" },
 			{ label: "Template", path: "/setting/template" },
 			{ label: "User Management", path: "/setting/user-management" },
+			{ label: "Server Management", path: "/setting/server-management" },
 			{ label: "Top", path: "/setting/top" },
 		],
 	},

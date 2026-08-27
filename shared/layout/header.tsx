@@ -99,15 +99,13 @@ export default function Header() {
     const paths = pathname.split("/").filter((path) => path !== "");
 
     const breadcrumbs: Breadcrumb[] = [
-      {
-        href: "/",
-        // Show the logged-in staff user's institution instead of a static "Home" label.
-        // Falls back to "Home" for super-admins or while currentUser is still loading.
-        label: isStaff && displayInstitution ? displayInstitution : "Home",
-        isLast: paths.length === 0,
-        isClickable: false // Home is always clickable
-      }
-    ];
+  {
+    href: "/ticket/dashboard",
+    label: isStaff && displayInstitution ? displayInstitution : "Home",
+    isLast: paths.length === 0,
+    isClickable: true,
+  }
+];
 
     let currentPath = "";
     paths.forEach((path, index) => {
@@ -189,33 +187,36 @@ export default function Header() {
         {breadcrumbs.length > 1 && (
           <nav className="flex items-center gap-1.5 text-sm mt-1" aria-label="Breadcrumb">
             {breadcrumbs.map((crumb, idx) => (
-              <React.Fragment key={crumb.href}>
-                {idx > 0 && <ChevronRight size={14} className="text-gray-300" />}
-                {crumb.isLast ? (
-                  <span className="text-[#1E4637]  font-medium text-xs">
-                    {crumb.label}
-                  </span>
-                ) : crumb.isClickable ? (
-                  <Link
-                    href={crumb.href}
-                    className="text-gray-500 hover:text-[#1E4637]  transition-colors text-xs"
-                  >
-                    {crumb.label}
-                  </Link>
-                ) : (
-                  <span className="text-gray-400 text-xs cursor-default">
-                    {crumb.label}
-                  </span>
-                )}
-              </React.Fragment>
-            ))}
+  <React.Fragment key={`${crumb.href}-${idx}`}>
+    {idx > 0 && (
+      <ChevronRight size={14} className="text-gray-300" />
+    )}
+
+    {crumb.isLast ? (
+      <span className="text-[#1E4637] font-medium text-xs">
+        {crumb.label}
+      </span>
+    ) : crumb.isClickable ? (
+      <Link
+        href={crumb.href}
+        className="text-gray-500 hover:text-[#1E4637] transition-colors text-xs"
+      >
+        {crumb.label}
+      </Link>
+    ) : (
+      <span className="text-gray-400 text-xs cursor-default">
+        {crumb.label}
+      </span>
+    )}
+  </React.Fragment>
+))}
           </nav>
         )}
       </div>
 
       {/* Right Section - Search & Profile */}
       <div className="flex items-center gap-4">
-        <form onSubmit={handleSearch} className="hidden lg:block">
+        {/* <form onSubmit={handleSearch} className="hidden lg:block">
           <div className="relative">
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
@@ -226,7 +227,7 @@ export default function Header() {
               className="pl-10 pr-4 py-2 w-64 bg-gray-50 border border-gray-200 rounded-xl text-gray-600 focus:outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400 transition-all"
             />
           </div>
-        </form>
+        </form> */}
 
         <button className="relative p-2 hover:bg-gray-100 rounded-xl transition-colors">
           <Bell size={20} className="text-gray-600" />

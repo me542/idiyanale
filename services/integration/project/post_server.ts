@@ -4,6 +4,7 @@ import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 export interface AddServerRequest {
   server_name: string;
   server_ip: string;
+  institution_id: number;
 }
 
 export async function addServer(

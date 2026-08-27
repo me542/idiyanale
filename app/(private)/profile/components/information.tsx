@@ -54,12 +54,6 @@ export function InformationPanel({
         setLoading(true);
         setError("");
 
-        /*
-         * Get JWT token from localStorage.
-         *
-         * Your application appears to use "token"
-         * and "access_token" as possible token keys.
-         */
         const token =
           localStorage.getItem("token") ||
           localStorage.getItem("access_token");
@@ -69,9 +63,6 @@ export function InformationPanel({
           return;
         }
 
-        /*
-         * Verify and decode JWT
-         */
         const payload = await verifyJWT(token);
 
         if (!payload) {
@@ -79,13 +70,6 @@ export function InformationPanel({
           return;
         }
 
-        /*
-         * Your JWT payload contains:
-         *
-         * id: number
-         *
-         * Use that ID to get the complete user details.
-         */
         if (!payload.id) {
           setError("User ID not found in authentication token.");
           return;
@@ -94,9 +78,6 @@ export function InformationPanel({
         console.log("JWT Payload:", payload);
         console.log("User ID:", payload.id);
 
-        /*
-         * Get complete user information
-         */
         const result = await getUserByID(payload.id);
 
         console.log("Get User By ID Response:", result);
@@ -112,16 +93,15 @@ export function InformationPanel({
 
         console.log("User Details:", user);
 
-        /*
-         * Map API response to WorkInfo
-         */
         setWorkInfo({
           staffId: user.staff_id || "",
           firstName: user.first_name || "",
           lastName: user.last_name || "",
           email: user.email || "",
-          institution: user.institution?.institution_name || "",
-          position: user.job_position?.job_position_name || "",
+          institution:
+            user.institution?.institution_name || "",
+          position:
+            user.job_position?.job_position_name || "",
           role: user.role?.role_name || "",
         });
       } catch (error) {
@@ -144,15 +124,15 @@ export function InformationPanel({
    */
   if (activeNav === "work") {
     return (
-      <div className="min-h-[680px] w-full flex-1 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full flex-1 rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
         {loading ? (
-          <div className="flex min-h-[300px] items-center justify-center">
+          <div className="flex min-h-[250px] items-center justify-center">
             <p className="text-sm text-slate-400">
               Loading work information...
             </p>
           </div>
         ) : error ? (
-          <div className="flex min-h-[300px] items-center justify-center">
+          <div className="flex min-h-[250px] items-center justify-center">
             <p className="text-sm text-red-500">
               {error}
             </p>
@@ -193,6 +173,7 @@ function WorkInformationView({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
   const [formWork, setFormWork] =
     useState<WorkInfo>(workInfo);
 
@@ -235,11 +216,16 @@ function WorkInformationView({
   };
 
   return (
-    <div>
+    <div className="w-full">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-800">
           Work Information
         </h2>
+
+        {/* 
+        Enable this section if you want the edit functionality
+        to be visible.
 
         {!isEditing ? (
           <button
@@ -280,9 +266,11 @@ function WorkInformationView({
             </button>
           </div>
         )}
+        */}
       </div>
 
-      <dl className="mt-6 space-y-4">
+      {/* Information */}
+      <dl className="mt-7 space-y-5">
         <InfoRow
           label="Staff ID"
           value={formWork.staffId}
@@ -347,6 +335,7 @@ function WorkInformationView({
         />
       </dl>
 
+      {/* Confirmation Modal */}
       {showConfirm && (
         <ConfirmEditModal
           onConfirm={confirmEdit}
@@ -371,10 +360,13 @@ function InfoRow({
   isEditing?: boolean;
   onChange?: (value: string) => void;
 }) {
+  /*
+   * Editing state
+   */
   if (isEditing) {
     return (
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <dt className="w-40 shrink-0 font-semibold text-slate-400">
+      <div className="flex items-center gap-3 text-sm">
+        <dt className="w-28 shrink-0 font-semibold text-slate-400">
           {label}:
         </dt>
 
@@ -385,16 +377,19 @@ function InfoRow({
             onChange={(event) =>
               onChange?.(event.target.value)
             }
-            className="w-full rounded-md border border-slate-200 px-2 py-1 text-sm font-medium text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+            className="w-full max-w-xl rounded-md border border-slate-200 px-2.5 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
           />
         </dd>
       </div>
     );
   }
 
+  /*
+   * Normal state
+   */
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-      <dt className="font-semibold text-slate-400">
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+      <dt className="w-28 shrink-0 font-semibold text-slate-400">
         {label}:
       </dt>
 

@@ -1,10 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Filter, X, Download, Loader2 } from "lucide-react";
 import { getAllTicketsByInstitution, InstitutionTicket } from "@/services/integration/ticket/get_all_ticket_by_insti"; // adjust path if needed
 import { verifyJWT } from "@/lib/auth/verify-jwt"; // adjust to actual path
+import { processTicket } from "@/services/integration/ticket/post_ticket_process";
+import TicketDetailPanel from "@/shared/layout/ticket_progress";
 import {
   StatusBucket,
   ReviewStage,
@@ -12,7 +14,8 @@ import {
   STAGE_LABELS,
   getStatusBucket,
   getReviewStage,
-} from "../dashboard/components/status_ticket"; // adjust path if needed
+  normalizeStatus,
+} from "../dashboard/components/status_ticket";
 
 // ---- Row shape rendered by the table (flattened from InstitutionTicket) ----
 type TicketRow = {
@@ -260,9 +263,14 @@ function TicketsTableInner() {
   const searchParams = useSearchParams();
 
   const [tickets, setTickets] = useState<TicketRow[]>([]);
+  const [rawTickets, setRawTickets] = useState<InstitutionTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [institutionId, setInstitutionId] = useState<number | null>(null);
+
+  // Detail panel state
+  const [selectedTicket, setSelectedTicket] = useState<InstitutionTicket | null>(null);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   const [sort, setSort] = useState<SortState>({ key: null, direction: null });
   const [filters, setFilters] = useState<FiltersState>({});
@@ -339,6 +347,7 @@ function TicketsTableInner() {
       try {
         const data = await getAllTicketsByInstitution(institutionId!);
         if (!cancelled) {
+          setRawTickets(data);
           setTickets(data.map(mapToRow));
         }
       } catch (err) {
@@ -395,6 +404,99 @@ function TicketsTableInner() {
   function clearAllFilters() {
     setFilters({});
   }
+
+  // Re-fetch tickets (used after a process action so the panel reflects the
+  // latest status without requiring a full page reload).
+  const reloadTickets = useCallback(async () => {
+    if (!institutionId) return;
+    try {
+      const data = await getAllTicketsByInstitution(institutionId);
+      setRawTickets(data);
+      setTickets(data.map(mapToRow));
+      // Keep the panel open but sync it to the freshly fetched ticket.
+      setSelectedTicket((prev) =>
+        prev ? (data.find((t) => t.ticket_id === prev.ticket_id) ?? prev) : null
+      );
+    } catch {
+      // Silently fail — the user can refresh manually.
+    }
+  }, [institutionId]);
+
+  // Action result feedback state — shown briefly after a process call.
+  const [actionFeedback, setActionFeedback] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+
+  function showFeedback(ok: boolean, message: string) {
+    setActionFeedback({ ok, message });
+    setTimeout(() => setActionFeedback(null), 3500);
+  }
+
+  // Calls POST /ticket/:id/process with the given action, reloads, then shows
+  // a brief success/error toast. Uses the full TicketProcessAction union so
+  // every action the API supports can be passed through.
+  const handlePanelAction = useCallback(
+    async (stepId: string, action: "endorse" | "approve" | "grab" | "ungrab" | "resolve" | "cancel") => {
+      if (!selectedTicket) return;
+      try {
+        const res = await processTicket(selectedTicket.ticket_id, { action });
+        await reloadTickets();
+        showFeedback(true, res.message ?? "Action completed successfully.");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Something went wrong.";
+        showFeedback(false, msg);
+        console.error("Failed to process ticket:", err);
+      }
+    },
+    [selectedTicket, reloadTickets]
+  );
+
+  // Derive which resolver sub-state the selected ticket is currently in.
+  // Uses the ticket status string as the source of truth — it's the same
+  // data the backend writes so it's always accurate after a reload.
+  function resolverPhaseOf(t: InstitutionTicket | null): string {
+    if (!t) return "for_review";
+    const s = normalizeStatus(t.status);
+    if (s === "onhold" || s === "hold") return "on_hold";
+    if (s === "resolved" || s === "closed") return "resolved";
+    if (s === "inprogress") return "in_progress";
+    // Approved / for-assignment means the resolver hasn't grabbed it yet.
+    return "for_review";
+  }
+
+  // ── Endorser ACCEPT → endorse
+  // ── Approver ACCEPT → approve
+  // ── Resolver ACCEPT (for_review) → grab
+  // ── Resolver ACCEPT (in_progress) → resolve
+  const handleAcceptStep = useCallback((stepId: string) => {
+    if (stepId === "endorsed") return handlePanelAction(stepId, "endorse");
+    if (stepId === "approved") return handlePanelAction(stepId, "approve");
+    if (stepId === "resolved") {
+      const phase = resolverPhaseOf(selectedTicket);
+      if (phase === "for_review") return handlePanelAction(stepId, "grab");
+      if (phase === "in_progress") return handlePanelAction(stepId, "resolve");
+    }
+  }, [handlePanelAction, selectedTicket]);
+
+  // ── Endorser / Approver REJECT → cancel (ticket is sent back)
+  // ── Resolver REJECT → ungrab (resolver drops the ticket back to the pool)
+  const handleRejectStep = useCallback((stepId: string) => {
+    if (stepId === "endorsed" || stepId === "approved") {
+      return handlePanelAction(stepId, "cancel");
+    }
+    if (stepId === "resolved") return handlePanelAction(stepId, "ungrab");
+  }, [handlePanelAction]);
+
+  // ── Resolver HOLD → ungrab (drops back to pool; no explicit hold action in API)
+  const handleHoldStep = useCallback((stepId: string) => {
+    if (stepId === "resolved") return handlePanelAction(stepId, "ungrab");
+  }, [handlePanelAction]);
+
+  // ── Resolver RESUME → grab (re-claims the ticket from the pool)
+  const handleResumeStep = useCallback((stepId: string) => {
+    if (stepId === "resolved") return handlePanelAction(stepId, "grab");
+  }, [handlePanelAction]);
 
   function toggleSort(key: keyof TicketRow) {
     setSort((prev) => {
@@ -694,7 +796,12 @@ function TicketsTableInner() {
               sortedTickets.map((ticket) => (
                 <tr
                   key={ticket.TicketID}
-                  className="border-t border-gray-200 hover:bg-gray-50"
+                  onClick={() => {
+                    const raw = rawTickets.find((t) => t.ticket_id === ticket.TicketID) ?? null;
+                    setSelectedTicket(raw);
+                    setIsPanelOpen(true);
+                  }}
+                  className="border-t border-gray-200 hover:bg-gray-50 cursor-pointer"
                 >
                   {columns.map((col) => (
                     <td
@@ -722,6 +829,27 @@ function TicketsTableInner() {
           onConfirm={performDownload}
         />
       )}
+
+      {/* Action feedback toast */}
+      {actionFeedback && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold shadow-lg text-white transition-all ${
+          actionFeedback.ok ? "bg-emerald-500" : "bg-rose-500"
+        }`}>
+          {actionFeedback.ok ? "✓" : "✕"} {actionFeedback.message}
+        </div>
+      )}
+
+      {/* Ticket Detail Panel */}
+      <TicketDetailPanel
+        ticket={selectedTicket}
+        isOpen={isPanelOpen}
+        onOpen={() => setIsPanelOpen(true)}
+        onClose={() => setIsPanelOpen(false)}
+        onAcceptStep={handleAcceptStep}
+        onRejectStep={handleRejectStep}
+        onHoldStep={handleHoldStep}
+        onResumeStep={handleResumeStep}
+      />
     </div>
   );
 }

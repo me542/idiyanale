@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+
 import { addInstitution } from "../../../../services/integration/institution/post-add-insti";
-import { getInstitutions, InstitutionResp } from "../../../../services/integration/institution/get-all-insti"; // adjust path to wherever you place get-insti.ts
-import { editInstitution } from "../../../../services/integration/institution/post-edit-insti-id"; // adjust path to wherever you place edit-insti.ts
+import {
+  getInstitutions,
+  InstitutionResp,
+} from "../../../../services/integration/institution/get-all-insti";
+import { editInstitution } from "../../../../services/integration/institution/post-edit-insti-id";
 
 type Status = "active" | "inactive";
 
@@ -13,7 +17,7 @@ type Institution = {
   name: string;
   description: string;
   color: string;
-  logo: string | null; // data URL
+  logo: string | null;
   status: Status;
   createdAt: string;
 };
@@ -27,20 +31,9 @@ type EditDraft = {
   logoPreview: string | null;
 };
 
-function formatDate(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
 const DEFAULT_COLOR = "#E4E7EC";
 const DEFAULT_LOGO = "/images/idiyanale.png";
 
-// GetInstitutions returns id/code/name/description/created_at —
-// color and logo aren't included in the read response yet (they ARE
-// writable via EditInstitution, they just don't come back on GET), so
-// those two are defaulted here on load.
 function mapFromApi(row: InstitutionResp): Institution {
   return {
     id: String(row.institution_id),
@@ -56,20 +49,56 @@ function mapFromApi(row: InstitutionResp): Institution {
 
 export default function InstitutionManagementPage() {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+
+  // Create modal state
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [color, setColor] = useState(DEFAULT_COLOR);
+  const [logo, setLogo] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Edit mode
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  const [drafts, setDrafts] = useState<Record<string, EditDraft>>({});
+
+  const [isSavingAll, setIsSavingAll] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [activeLogoRowId, setActiveLogoRowId] = useState<string | null>(
+    null
+  );
+
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  // --------------------------------------------------
+  // LOAD INSTITUTIONS
+  // --------------------------------------------------
 
   async function loadInstitutions() {
     setIsLoadingList(true);
     setListError(null);
+
     try {
       const result = await getInstitutions();
+
       setInstitutions((result.response ?? []).map(mapFromApi));
     } catch (err) {
       setListError(
-        err instanceof Error ? err.message : "Failed to load institutions."
+        err instanceof Error
+          ? err.message
+          : "Failed to load institutions."
       );
     } finally {
       setIsLoadingList(false);
@@ -81,23 +110,9 @@ export default function InstitutionManagementPage() {
     loadInstitutions();
   }, []);
 
-  // create-modal form state
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [color, setColor] = useState(DEFAULT_COLOR);
-  const [logo, setLogo] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  // header-driven "Edit whole table" mode
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, EditDraft>>({});
-  const [isSavingAll, setIsSavingAll] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [activeLogoRowId, setActiveLogoRowId] = useState<string | null>(null);
-  const editFileInputRef = useRef<HTMLInputElement>(null);
+  // --------------------------------------------------
+  // CREATE MODAL
+  // --------------------------------------------------
 
   function resetForm() {
     setCode("");
@@ -114,22 +129,33 @@ export default function InstitutionManagementPage() {
   }
 
   function closeModal() {
-    if (isSaving) return; // don't let them close mid-request
+    if (isSaving) return;
+
     setIsModalOpen(false);
     resetForm();
   }
 
-  function handleLogoPick(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleLogoPick(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
     const file = e.target.files?.[0];
+
     if (!file) return;
+
     const reader = new FileReader();
-    reader.onload = () => setLogo(reader.result as string);
+
+    reader.onload = () => {
+      setLogo(reader.result as string);
+    };
+
     reader.readAsDataURL(file);
   }
 
   async function handleCreate() {
     if (!code.trim() || !name.trim()) {
-      setError("Institution ID and Institution name are required.");
+      setError(
+        "Institution ID and Institution name are required."
+      );
       return;
     }
 
@@ -137,8 +163,6 @@ export default function InstitutionManagementPage() {
     setIsSaving(true);
 
     try {
-      // Backend (AddInstitution) only accepts these three fields today —
-      // logo/color/status are UI-only until the create endpoint supports them.
       await addInstitution({
         institution_code: code.trim(),
         institution_name: name.trim(),
@@ -146,33 +170,56 @@ export default function InstitutionManagementPage() {
       });
 
       closeModal();
+
       await loadInstitutions();
     } catch (err) {
-      // err.message surfaces the backend's message directly, e.g.
-      // "institution already exists" (409) or "Forbidden" (403)
-      setError(err instanceof Error ? err.message : "Failed to add institution.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to add institution."
+      );
     } finally {
       setIsSaving(false);
     }
   }
 
+  // --------------------------------------------------
+  // STATUS
+  // --------------------------------------------------
+
   function updateStatus(id: string, status: Status) {
     setInstitutions((prev) =>
-      prev.map((inst) => (inst.id === id ? { ...inst, status } : inst))
+      prev.map((inst) =>
+        inst.id === id
+          ? {
+              ...inst,
+              status,
+            }
+          : inst
+      )
     );
   }
 
-  // ---- header Edit / Save toggle ----
+  // --------------------------------------------------
+  // EDIT MODE
+  // --------------------------------------------------
 
-  function updateDraft(id: string, patch: Partial<EditDraft>) {
+  function updateDraft(
+    id: string,
+    patch: Partial<EditDraft>
+  ) {
     setDrafts((prev) => ({
       ...prev,
-      [id]: { ...prev[id], ...patch },
+      [id]: {
+        ...prev[id],
+        ...patch,
+      },
     }));
   }
 
   function enterEditMode() {
     const initial: Record<string, EditDraft> = {};
+
     institutions.forEach((inst) => {
       initial[inst.id] = {
         code: inst.code,
@@ -183,6 +230,7 @@ export default function InstitutionManagementPage() {
         logoPreview: inst.logo,
       };
     });
+
     setDrafts(initial);
     setSaveError(null);
     setIsEditMode(true);
@@ -190,29 +238,49 @@ export default function InstitutionManagementPage() {
 
   function cancelEditMode() {
     if (isSavingAll) return;
+
     setDrafts({});
     setSaveError(null);
     setIsEditMode(false);
   }
 
-  function handleLogoPickShared(e: React.ChangeEvent<HTMLInputElement>) {
+  // --------------------------------------------------
+  // EDIT LOGO
+  // --------------------------------------------------
+
+  function handleLogoPickShared(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
     const file = e.target.files?.[0];
+
     if (!file || !activeLogoRowId) return;
+
     const rowId = activeLogoRowId;
+
     const reader = new FileReader();
-    reader.onload = () =>
+
+    reader.onload = () => {
       updateDraft(rowId, {
         logoFile: file,
         logoPreview: reader.result as string,
       });
+    };
+
     reader.readAsDataURL(file);
-    e.target.value = ""; // allow re-picking the same file later
+
+    e.target.value = "";
   }
+
+  // --------------------------------------------------
+  // SAVE ALL CHANGES
+  // --------------------------------------------------
 
   async function saveAllChanges() {
     const changed = institutions.filter((inst) => {
       const d = drafts[inst.id];
+
       if (!d) return false;
+
       return (
         d.code.trim() !== inst.code ||
         d.name.trim() !== inst.name ||
@@ -230,12 +298,15 @@ export default function InstitutionManagementPage() {
 
     const invalid = changed.find((inst) => {
       const d = drafts[inst.id];
+
       return !d.code.trim() || !d.name.trim();
     });
+
     if (invalid) {
       setSaveError(
         `"${invalid.name || invalid.code}" needs both an Institution ID and name.`
       );
+
       return;
     }
 
@@ -245,6 +316,7 @@ export default function InstitutionManagementPage() {
     const results = await Promise.allSettled(
       changed.map((inst) => {
         const d = drafts[inst.id];
+
         return editInstitution(inst.id, {
           institution_code: d.code.trim(),
           institution_name: d.name.trim(),
@@ -256,7 +328,8 @@ export default function InstitutionManagementPage() {
     );
 
     const failed = results.filter(
-      (r): r is PromiseRejectedResult => r.status === "rejected"
+      (r): r is PromiseRejectedResult =>
+        r.status === "rejected"
     );
 
     if (failed.length > 0) {
@@ -264,23 +337,32 @@ export default function InstitutionManagementPage() {
         failed[0].reason instanceof Error
           ? failed[0].reason.message
           : "Unknown error";
+
       setSaveError(
         `${failed.length} of ${changed.length} institution(s) failed to save: ${firstMessage}`
       );
+
       setIsSavingAll(false);
-      return; // stay in edit mode so the user can fix and retry
+
+      return;
     }
 
     await loadInstitutions();
+
     setDrafts({});
     setIsEditMode(false);
     setIsSavingAll(false);
+
     setSavedFlash(true);
-    window.setTimeout(() => setSavedFlash(false), 1500);
+
+    window.setTimeout(() => {
+      setSavedFlash(false);
+    }, 1500);
   }
 
   function handleHeaderButtonClick() {
     if (isSavingAll) return;
+
     if (isEditMode) {
       saveAllChanges();
     } else {
@@ -288,15 +370,24 @@ export default function InstitutionManagementPage() {
     }
   }
 
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
+
   return (
-    <div className="min-h-screen  py-1 sm:px-2">
-      <div className="mx-auto max-w-15xl rounded-2xl border border-[#E7E9ED] bg-white shadow-sm">
-        {/* Header */}
+    <div className="min-h-screen py-1 sm:px-2">
+      <div className="mx-auto w-full max-w-[1600px] overflow-hidden rounded-2xl border border-[#E7E9ED] bg-white shadow-sm">
+        {/* ----------------------------------------- */}
+        {/* HEADER */}
+        {/* ----------------------------------------- */}
+
         <div className="flex items-center justify-between border-b border-[#EDEFF2] px-6 py-4">
           <h1 className="text-[15px] font-semibold text-[#111318]">
             Institution Management
           </h1>
+
           <div className="flex items-center gap-3">
+            {/* Add */}
             <button
               onClick={openModal}
               aria-label="Add institution"
@@ -305,6 +396,7 @@ export default function InstitutionManagementPage() {
               <PlusIcon />
             </button>
 
+            {/* Cancel */}
             {isEditMode && (
               <button
                 onClick={cancelEditMode}
@@ -315,6 +407,7 @@ export default function InstitutionManagementPage() {
               </button>
             )}
 
+            {/* Edit / Save */}
             <button
               onClick={handleHeaderButtonClick}
               disabled={isSavingAll}
@@ -331,11 +424,17 @@ export default function InstitutionManagementPage() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto px-6 pb-8 pt-2">
+        {/* ----------------------------------------- */}
+        {/* TABLE AREA */}
+        {/* ----------------------------------------- */}
+
+        <div className="w-full overflow-x-auto px-6 pb-8 pt-2">
+          {/* Loading / Error */}
+
           {listError && (
             <div className="mb-4 flex items-center justify-between rounded-lg border border-[#F8D3CE] bg-[#FDF3F2] px-4 py-3 text-[13px] text-[#E0483C]">
               <span>{listError}</span>
+
               <button
                 onClick={loadInstitutions}
                 className="font-semibold underline hover:no-underline"
@@ -351,6 +450,8 @@ export default function InstitutionManagementPage() {
             </div>
           )}
 
+          {/* Hidden edit logo input */}
+
           <input
             ref={editFileInputRef}
             type="file"
@@ -364,164 +465,261 @@ export default function InstitutionManagementPage() {
               Loading institutions...
             </div>
           ) : (
-          <>
-          <table className="w-full min-w-[860px] border-collapse text-left">
-            <thead>
-              <tr className="text-[12px] uppercase tracking-wide text-[#9AA0A8]">
-                <th className="w-20 py-3 font-medium">Logo</th>
-                <th className="w-36 py-3 font-medium">Institution Code</th>
-                <th className="w-56 py-3 font-medium">Institution</th>
-                <th className="py-3 font-medium">Description</th>
-                <th className="w-24 py-3 font-medium">Color</th>
-                <th className="w-32 py-3 font-medium">Status</th>
-                <th className="w-44 py-3 font-medium">Created At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {institutions.map((inst) => {
-                const d = drafts[inst.id];
+            <>
+              {/* ----------------------------------------- */}
+              {/* TABLE */}
+              {/* ----------------------------------------- */}
 
-                return (
-                  <tr key={inst.id} className="border-t border-[#F1F2F4]">
-                    <td className="py-4">
-                      <button
-                        type="button"
-                        disabled={!isEditMode}
-                        onClick={() => {
-                          setActiveLogoRowId(inst.id);
-                          editFileInputRef.current?.click();
-                        }}
-                        className="h-9 w-9 overflow-hidden rounded-full bg-[#E4E7EC] disabled:cursor-default"
-                        aria-label={isEditMode ? "Change logo" : undefined}
-                      >
-                        <img
-                          src={(isEditMode ? d?.logoPreview : inst.logo) || DEFAULT_LOGO}
-                          alt={inst.name}
-                          className="h-full w-full object-cover"
-                        />
-                      </button>
-                    </td>
+              <table className="min-w-[1200px] w-full border-collapse text-left">
+                <thead>
+                  <tr className="text-[12px] uppercase tracking-wide text-[#9AA0A8]">
+                    <th className="w-20 py-3 font-medium">
+                      Logo
+                    </th>
 
-                    <td className="py-4 text-[14px] font-semibold text-[#111318]">
-                      {isEditMode ? (
-                        <input
-                          value={d?.code ?? ""}
-                          disabled={isSavingAll}
-                          onChange={(e) =>
-                            updateDraft(inst.id, { code: e.target.value })
-                          }
-                          className="w-full rounded-md border border-[#E1E3E7] px-2 py-1 text-[14px] outline-none focus:border-[#1AAE6F] disabled:opacity-60"
-                        />
-                      ) : (
-                        inst.code
-                      )}
-                    </td>
+                    <th className="w-36 py-3 font-medium">
+                      Institution Code
+                    </th>
 
-                    <td className="py-4 text-[14px] font-semibold text-[#111318]">
-                      {isEditMode ? (
-                        <input
-                          value={d?.name ?? ""}
-                          disabled={isSavingAll}
-                          onChange={(e) =>
-                            updateDraft(inst.id, { name: e.target.value })
-                          }
-                          className="w-full rounded-md border border-[#E1E3E7] px-2 py-1 text-[14px] outline-none focus:border-[#1AAE6F] disabled:opacity-60"
-                        />
-                      ) : (
-                        inst.name
-                      )}
-                    </td>
+                    <th className="w-56 py-3 font-medium">
+                      Institution
+                    </th>
 
-                    <td className="py-4 text-[14px] text-[#5B616B]">
-                      {isEditMode ? (
-                        <input
-                          value={d?.description ?? ""}
-                          disabled={isSavingAll}
-                          onChange={(e) =>
-                            updateDraft(inst.id, { description: e.target.value })
-                          }
-                          className="w-full rounded-md border border-[#E1E3E7] px-2 py-1 text-[14px] outline-none focus:border-[#1AAE6F] disabled:opacity-60"
-                        />
-                      ) : (
-                        inst.description || "—"
-                      )}
-                    </td>
+                    <th className="min-w-[300px] py-3 font-medium">
+                      Description
+                    </th>
 
-                    <td className="py-4">
-                      {isEditMode ? (
-                        <input
-                          type="color"
-                          value={d?.color ?? DEFAULT_COLOR}
-                          disabled={isSavingAll}
-                          onChange={(e) =>
-                            updateDraft(inst.id, { color: e.target.value })
-                          }
-                          className="h-7 w-7 cursor-pointer rounded-md border border-[#00000010] bg-transparent p-0 disabled:opacity-60"
-                        />
-                      ) : (
-                        <div
-                          className="h-7 w-7 rounded-md border border-[#00000010]"
-                          style={{ backgroundColor: inst.color }}
-                        />
-                      )}
-                    </td>
+                    <th className="w-24 py-3 font-medium">
+                      Color
+                    </th>
 
-                    <td className="py-4">
-                      <div className="relative inline-block">
-                        <select
-                          value={inst.status}
-                          onChange={(e) =>
-                            updateStatus(inst.id, e.target.value as Status)
-                          }
-                          className={`appearance-none rounded-md bg-transparent pr-5 text-[14px] font-semibold outline-none ${
-                            inst.status === "active"
-                              ? "text-[#1AAE6F]"
-                              : "text-[#B0B4BA]"
-                          }`}
-                        >
-                          <option value="active">active</option>
-                          <option value="inactive">inactive</option>
-                        </select>
-                        <ChevronIcon className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-current" />
-                      </div>
-                    </td>
+                    <th className="w-32 py-3 font-medium">
+                      Status
+                    </th>
 
-                    <td className="py-4 text-[14px] font-semibold text-[#111318]">
-                      {inst.createdAt}
-                    </td>
+                    <th className="w-44 py-3 font-medium">
+                      Created At
+                    </th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                </thead>
 
-          {institutions.length === 0 && (
-            <div className="flex flex-col items-center gap-3 py-20 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F1F2F4] text-[#9AA0A8]">
-                <BuildingIcon />
-              </div>
-              <p className="text-[14px] font-medium text-[#5B616B]">
-                No institutions yet
-              </p>
-              <p className="max-w-xs text-[13px] text-[#9AA0A8]">
-                Add an institution to start managing its users, branding, and
-                status.
-              </p>
-              <button
-                onClick={openModal}
-                className="mt-1 flex items-center gap-2 rounded-full border border-[#D8DBE0] px-4 py-1.5 text-[13px] font-semibold text-[#3C4046] transition hover:border-[#B8BCC4] hover:bg-[#F7F8FA]"
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-                Add institution
-              </button>
-            </div>
-          )}
-          </>
+                <tbody>
+                  {institutions.map((inst) => {
+                    const d = drafts[inst.id];
+
+                    return (
+                      <tr
+                        key={inst.id}
+                        className="border-t border-[#F1F2F4]"
+                      >
+                        {/* -------------------------------- */}
+                        {/* LOGO */}
+                        {/* -------------------------------- */}
+
+                        <td className="py-4">
+                          <button
+                            type="button"
+                            disabled={!isEditMode}
+                            onClick={() => {
+                              setActiveLogoRowId(inst.id);
+                              editFileInputRef.current?.click();
+                            }}
+                            className="h-9 w-9 overflow-hidden rounded-full bg-[#E4E7EC] disabled:cursor-default"
+                            aria-label={
+                              isEditMode
+                                ? "Change logo"
+                                : undefined
+                            }
+                          >
+                            <img
+                              src={
+                                (isEditMode
+                                  ? d?.logoPreview
+                                  : inst.logo) ||
+                                DEFAULT_LOGO
+                              }
+                              alt={inst.name}
+                              className="h-full w-full object-cover"
+                            />
+                          </button>
+                        </td>
+
+                        {/* -------------------------------- */}
+                        {/* CODE */}
+                        {/* -------------------------------- */}
+
+                        <td className="py-4 text-[14px] font-semibold text-[#111318]">
+                          {isEditMode ? (
+                            <input
+                              value={d?.code ?? ""}
+                              disabled={isSavingAll}
+                              onChange={(e) =>
+                                updateDraft(inst.id, {
+                                  code: e.target.value,
+                                })
+                              }
+                              className="w-full min-w-[120px] rounded-md border border-[#E1E3E7] px-2 py-1 text-[14px] outline-none focus:border-[#1AAE6F] disabled:opacity-60"
+                            />
+                          ) : (
+                            inst.code
+                          )}
+                        </td>
+
+                        {/* -------------------------------- */}
+                        {/* NAME */}
+                        {/* -------------------------------- */}
+
+                        <td className="py-4 text-[14px] font-semibold text-[#111318]">
+                          {isEditMode ? (
+                            <input
+                              value={d?.name ?? ""}
+                              disabled={isSavingAll}
+                              onChange={(e) =>
+                                updateDraft(inst.id, {
+                                  name: e.target.value,
+                                })
+                              }
+                              className="w-full min-w-[180px] rounded-md border border-[#E1E3E7] px-2 py-1 text-[14px] outline-none focus:border-[#1AAE6F] disabled:opacity-60"
+                            />
+                          ) : (
+                            inst.name
+                          )}
+                        </td>
+
+                        {/* -------------------------------- */}
+                        {/* DESCRIPTION */}
+                        {/* -------------------------------- */}
+
+                        <td className="min-w-[300px] py-4 text-[14px] text-[#5B616B]">
+                          {isEditMode ? (
+                            <input
+                              value={d?.description ?? ""}
+                              disabled={isSavingAll}
+                              onChange={(e) =>
+                                updateDraft(inst.id, {
+                                  description:
+                                    e.target.value,
+                                })
+                              }
+                              className="w-full min-w-[300px] rounded-md border border-[#E1E3E7] px-2 py-1 text-[14px] outline-none focus:border-[#1AAE6F] disabled:opacity-60"
+                            />
+                          ) : (
+                            inst.description || "—"
+                          )}
+                        </td>
+
+                        {/* -------------------------------- */}
+                        {/* COLOR */}
+                        {/* -------------------------------- */}
+
+                        <td className="py-4">
+                          {isEditMode ? (
+                            <input
+                              type="color"
+                              value={
+                                d?.color ?? DEFAULT_COLOR
+                              }
+                              disabled={isSavingAll}
+                              onChange={(e) =>
+                                updateDraft(inst.id, {
+                                  color: e.target.value,
+                                })
+                              }
+                              className="h-7 w-7 cursor-pointer rounded-md border border-[#00000010] bg-transparent p-0 disabled:opacity-60"
+                            />
+                          ) : (
+                            <div
+                              className="h-7 w-7 rounded-md border border-[#00000010]"
+                              style={{
+                                backgroundColor: inst.color,
+                              }}
+                            />
+                          )}
+                        </td>
+
+                        {/* -------------------------------- */}
+                        {/* STATUS */}
+                        {/* -------------------------------- */}
+
+                        <td className="py-4">
+                          <div className="relative inline-block">
+                            <select
+                              value={inst.status}
+                              onChange={(e) =>
+                                updateStatus(
+                                  inst.id,
+                                  e.target.value as Status
+                                )
+                              }
+                              className={`appearance-none rounded-md bg-transparent pr-5 text-[14px] font-semibold outline-none ${
+                                inst.status === "active"
+                                  ? "text-[#1AAE6F]"
+                                  : "text-[#B0B4BA]"
+                              }`}
+                            >
+                              <option value="active">
+                                active
+                              </option>
+
+                              <option value="inactive">
+                                inactive
+                              </option>
+                            </select>
+
+                            <ChevronIcon className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-current" />
+                          </div>
+                        </td>
+
+                        {/* -------------------------------- */}
+                        {/* CREATED AT */}
+                        {/* -------------------------------- */}
+
+                        <td className="py-4 text-[14px] font-semibold text-[#111318]">
+                          {inst.createdAt}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {/* ----------------------------------------- */}
+              {/* EMPTY STATE */}
+              {/* ----------------------------------------- */}
+
+              {institutions.length === 0 && (
+                <div className="flex flex-col items-center gap-3 py-20 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F1F2F4] text-[#9AA0A8]">
+                    <BuildingIcon />
+                  </div>
+
+                  <p className="text-[14px] font-medium text-[#5B616B]">
+                    No institutions yet
+                  </p>
+
+                  <p className="max-w-xs text-[13px] text-[#9AA0A8]">
+                    Add an institution to start managing its
+                    users, branding, and status.
+                  </p>
+
+                  <button
+                    onClick={openModal}
+                    className="mt-1 flex items-center gap-2 rounded-full border border-[#D8DBE0] px-4 py-1.5 text-[13px] font-semibold text-[#3C4046] transition hover:border-[#B8BCC4] hover:bg-[#F7F8FA]"
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    Add institution
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {/* Create modal */}
+      {/* ============================================== */}
+      {/* CREATE MODAL */}
+      {/* ============================================== */}
+
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
@@ -531,10 +729,13 @@ export default function InstitutionManagementPage() {
             className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Modal header */}
+
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-[15px] font-semibold text-[#111318]">
                 Add institution
               </h2>
+
               <button
                 onClick={closeModal}
                 aria-label="Close"
@@ -546,31 +747,47 @@ export default function InstitutionManagementPage() {
             </div>
 
             <div className="flex flex-col gap-4">
-              {/* Logo */}
+              {/* -------------------------------- */}
+              {/* LOGO */}
+              {/* -------------------------------- */}
+
               <div className="flex items-center gap-4">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() =>
+                    fileInputRef.current?.click()
+                  }
                   className="h-14 w-14 shrink-0 overflow-hidden rounded-full border border-dashed border-[#D8DBE0] bg-[#F7F8FA]"
                   aria-label="Upload logo"
                 >
                   <img
                     src={logo || DEFAULT_LOGO}
-                    alt={logo ? "Logo preview" : "IDIYANALE"}
+                    alt={
+                      logo
+                        ? "Logo preview"
+                        : "IDIYANALE"
+                    }
                     className="h-full w-full object-cover"
                   />
                 </button>
+
                 <div>
                   <p className="text-[13px] font-semibold text-[#111318]">
                     Logo
                   </p>
+
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() =>
+                      fileInputRef.current?.click()
+                    }
                     className="text-[12px] font-medium text-[#1AAE6F] hover:underline"
                   >
-                    {logo ? "Change image" : "Upload image"}
+                    {logo
+                      ? "Change image"
+                      : "Upload image"}
                   </button>
+
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -581,42 +798,60 @@ export default function InstitutionManagementPage() {
                 </div>
               </div>
 
-              {/* Institution ID */}
+              {/* -------------------------------- */}
+              {/* INSTITUTION ID */}
+              {/* -------------------------------- */}
+
               <label className="flex flex-col gap-1.5">
                 <span className="text-[12px] font-medium uppercase tracking-wide text-[#9AA0A8]">
                   Institution ID
                 </span>
+
                 <input
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(e) =>
+                    setCode(e.target.value)
+                  }
                   placeholder="e.g. 27"
                   disabled={isSaving}
                   className="rounded-lg border border-[#E1E3E7] px-3 py-2 text-[14px] text-[#111318] outline-none transition focus:border-[#1AAE6F] disabled:opacity-60"
                 />
               </label>
 
-              {/* Institution name */}
+              {/* -------------------------------- */}
+              {/* INSTITUTION NAME */}
+              {/* -------------------------------- */}
+
               <label className="flex flex-col gap-1.5">
                 <span className="text-[12px] font-medium uppercase tracking-wide text-[#9AA0A8]">
                   Institution name
                 </span>
+
                 <input
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) =>
+                    setName(e.target.value)
+                  }
                   placeholder="e.g. BAKAWAN Data Analytics"
                   disabled={isSaving}
                   className="rounded-lg border border-[#E1E3E7] px-3 py-2 text-[14px] text-[#111318] outline-none transition focus:border-[#1AAE6F] disabled:opacity-60"
                 />
               </label>
 
-              {/* Description */}
+              {/* -------------------------------- */}
+              {/* DESCRIPTION */}
+              {/* -------------------------------- */}
+
               <label className="flex flex-col gap-1.5">
                 <span className="text-[12px] font-medium uppercase tracking-wide text-[#9AA0A8]">
                   Description
                 </span>
+
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) =>
+                    setDescription(e.target.value)
+                  }
                   placeholder="Optional notes about this institution"
                   rows={3}
                   disabled={isSaving}
@@ -624,27 +859,38 @@ export default function InstitutionManagementPage() {
                 />
               </label>
 
-              {/* Color */}
+              {/* -------------------------------- */}
+              {/* COLOR */}
+              {/* -------------------------------- */}
+
               <label className="flex flex-col gap-1.5">
                 <span className="text-[12px] font-medium uppercase tracking-wide text-[#9AA0A8]">
                   Color
                 </span>
+
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
                     value={color}
-                    onChange={(e) => setColor(e.target.value)}
+                    onChange={(e) =>
+                      setColor(e.target.value)
+                    }
                     disabled={isSaving}
                     className="h-9 w-9 cursor-pointer rounded-md border border-[#E1E3E7] bg-transparent p-0 disabled:opacity-60"
                   />
+
                   <input
                     value={color}
-                    onChange={(e) => setColor(e.target.value)}
+                    onChange={(e) =>
+                      setColor(e.target.value)
+                    }
                     disabled={isSaving}
                     className="flex-1 rounded-lg border border-[#E1E3E7] px-3 py-2 text-[14px] uppercase text-[#111318] outline-none transition focus:border-[#1AAE6F] disabled:opacity-60"
                   />
                 </div>
               </label>
+
+              {/* ERROR */}
 
               {error && (
                 <p className="text-[13px] font-medium text-[#E0483C]">
@@ -652,6 +898,10 @@ export default function InstitutionManagementPage() {
                 </p>
               )}
             </div>
+
+            {/* -------------------------------- */}
+            {/* MODAL BUTTONS */}
+            {/* -------------------------------- */}
 
             <div className="mt-6 flex justify-end gap-2">
               <button
@@ -661,12 +911,15 @@ export default function InstitutionManagementPage() {
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleCreate}
                 disabled={isSaving}
                 className="rounded-full bg-[#1AAE6F] px-5 py-2 text-[13px] font-semibold text-white transition hover:bg-[#149260] active:scale-95 disabled:opacity-60 disabled:active:scale-100"
               >
-                {isSaving ? "Adding..." : "Add institution"}
+                {isSaving
+                  ? "Adding..."
+                  : "Add institution"}
               </button>
             </div>
           </div>
@@ -676,7 +929,15 @@ export default function InstitutionManagementPage() {
   );
 }
 
-function PlusIcon({ className = "h-4 w-4" }: { className?: string }) {
+/* ================================================== */
+/* ICONS */
+/* ================================================== */
+
+function PlusIcon({
+  className = "h-4 w-4",
+}: {
+  className?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -706,7 +967,11 @@ function CloseIcon() {
   );
 }
 
-function ChevronIcon({ className = "" }: { className?: string }) {
+function ChevronIcon({
+  className = "",
+}: {
+  className?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"

@@ -30,13 +30,12 @@ export interface UserDetails {
 }
 
 export interface GetAllUsersResponse {
+  [x: string]: any;
   response?: UserDetails[];
   message?: string;
   ret_code?: string;
 }
 
 export const getAllUsers = async (): Promise<GetAllUsersResponse> => {
-  return get<GetAllUsersResponse>(
-    ApiEndpoint.GET_USER
-  );
+  return get<GetAllUsersResponse>(ApiEndpoint.GET_USER);
 };

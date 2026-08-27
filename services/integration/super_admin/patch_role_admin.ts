@@ -9,6 +9,8 @@ export interface ChangeRoleToAdminResponse {
 
 export const changeRoleToAdmin = async (
   id: number | string
-): Promise<ChangeRoleToAdminResponse> => {
-  return patch(ApiEndpoint.PATCH_CHANGED_ROLE_ADMIN(id));
+) => {
+  return patch(
+    ApiEndpoint.PATCH_CHANGED_ROLE_ADMIN(id)
+  );
 };

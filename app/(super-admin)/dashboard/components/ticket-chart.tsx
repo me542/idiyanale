@@ -1,6 +1,16 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+
+import {
+  getInstitutions,
+  type InstitutionResp,
+} from '@/services/integration/institution/get-all-insti';
+
+import {
+  getAllTicketsByInstitution,
+  type InstitutionTicket,
+} from '@/services/integration/ticket/get_all_ticket_by_insti';
 
 interface TicketData {
   name: string;
@@ -16,25 +26,152 @@ const COLORS = {
 };
 
 const LEGEND_ITEMS = [
-  { key: 'serviceRequest', label: 'Service Request', color: COLORS.serviceRequest },
-  { key: 'changedRequest', label: 'Changed Request', color: COLORS.changedRequest },
-  { key: 'incidentReport', label: 'Incident Report', color: COLORS.incidentReport },
+  {
+    key: 'serviceRequest',
+    label: 'Service Request',
+    color: COLORS.serviceRequest,
+  },
+  {
+    key: 'changedRequest',
+    label: 'Changed Request',
+    color: COLORS.changedRequest,
+  },
+  {
+    key: 'incidentReport',
+    label: 'Incident Report',
+    color: COLORS.incidentReport,
+  },
 ] as const;
 
 const TicketChart = () => {
-  // Fed by the API — empty until real ticket data comes in.
-  const data: TicketData[] = [];
+  const [data, setData] = useState<TicketData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadTicketData = async () => {
+      try {
+        setLoading(true);
+
+        // Get all institutions
+        const institutionResponse = await getInstitutions();
+
+        const institutions =
+          institutionResponse.response ?? [];
+
+        if (institutions.length === 0) {
+          setData([]);
+          return;
+        }
+
+        /*
+         * Get tickets for every institution
+         */
+        const institutionTicketResults =
+          await Promise.all(
+            institutions.map(async (institution) => {
+              try {
+                const tickets =
+                  await getAllTicketsByInstitution(
+                    institution.institution_id
+                  );
+
+                return {
+                  institution,
+                  tickets,
+                };
+              } catch (error) {
+                console.error(
+                  `Failed to get tickets for institution ${institution.institution_name}:`,
+                  error
+                );
+
+                return {
+                  institution,
+                  tickets: [] as InstitutionTicket[],
+                };
+              }
+            })
+          );
+
+        /*
+         * Convert the API response into chart data
+         */
+        const chartData: TicketData[] =
+          institutionTicketResults.map(
+            ({ institution, tickets }) => {
+              let serviceRequest = 0;
+              let changedRequest = 0;
+              let incidentReport = 0;
+
+              tickets.forEach((ticket) => {
+                const ticketType =
+                  ticket.ticket_type?.ticket_type_name
+                    ?.trim()
+                    .toLowerCase();
+
+                if (
+                  ticketType === 'service request'
+                ) {
+                  serviceRequest++;
+                } else if (
+                  ticketType === 'changed request' ||
+                  ticketType === 'change request'
+                ) {
+                  changedRequest++;
+                } else if (
+                  ticketType === 'incident report' ||
+                  ticketType === 'incident'
+                ) {
+                  incidentReport++;
+                }
+              });
+
+              return {
+                name: institution.institution_name,
+                serviceRequest,
+                changedRequest,
+                incidentReport,
+              };
+            }
+          );
+
+        setData(chartData);
+      } catch (error) {
+        console.error(
+          'Failed to load ticket chart:',
+          error
+        );
+
+        setData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTicketData();
+  }, []);
 
   const hasData = data.length > 0;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm h-full flex flex-col">
-      <h3 className="text-sm font-semibold text-gray-700 mb-4">Ticket</h3>
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">
+        Ticket
+      </h3>
 
-      {!hasData ? (
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center min-h-[250px]">
+          <p className="text-sm text-gray-400">
+            Loading ticket data...
+          </p>
+        </div>
+      ) : !hasData ? (
         <div className="flex-1 flex items-center justify-center min-h-[250px] bg-gray-50 rounded-lg border border-dashed border-gray-200">
           <div className="text-center px-4">
-            <p className="text-sm font-medium text-gray-400">No ticket data</p>
+            <p className="text-sm font-medium text-gray-400">
+              No ticket data
+            </p>
+
             <p className="text-xs text-gray-400 mt-1">
               Data will appear here once tickets are recorded.
             </p>
@@ -44,31 +181,62 @@ const TicketChart = () => {
         <>
           <div className="flex-1 flex flex-col justify-center gap-8">
             {data.map((row) => {
-              const total = row.serviceRequest + row.changedRequest + row.incidentReport;
-              const segments = LEGEND_ITEMS.map((item) => ({
-                ...item,
-                value: row[item.key as keyof Omit<TicketData, 'name'>],
-              }));
+              const total =
+                row.serviceRequest +
+                row.changedRequest +
+                row.incidentReport;
+
+              const segments = LEGEND_ITEMS.map(
+                (item) => ({
+                  ...item,
+                  value:
+                    row[
+                      item.key as keyof Omit<
+                        TicketData,
+                        'name'
+                      >
+                    ],
+                })
+              );
 
               return (
                 <div key={row.name}>
-                  <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-                    {row.name}
-                  </p>
+                  {/* Institution name + total */}
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p
+                      className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate"
+                      title={row.name}
+                    >
+                      {row.name}
+                    </p>
+
+                    <span className="text-xs font-semibold text-gray-400 shrink-0">
+                      {total}
+                    </span>
+                  </div>
+
                   {total === 0 ? (
                     <div className="h-9 rounded-md bg-gray-100" />
                   ) : (
                     <div className="flex h-9 w-full overflow-hidden rounded-md">
                       {segments
-                        .filter((seg) => seg.value > 0)
-                        .map((seg) => (
+                        .filter(
+                          (segment) =>
+                            segment.value > 0
+                        )
+                        .map((segment) => (
                           <div
-                            key={seg.key}
+                            key={segment.key}
                             style={{
-                              width: `${(seg.value / total) * 100}%`,
-                              backgroundColor: seg.color,
+                              width: `${
+                                (segment.value /
+                                  total) *
+                                100
+                              }%`,
+                              backgroundColor:
+                                segment.color,
                             }}
-                            title={`${seg.label}: ${seg.value}`}
+                            title={`${segment.label}: ${segment.value}`}
                           />
                         ))}
                     </div>
@@ -78,14 +246,23 @@ const TicketChart = () => {
             })}
           </div>
 
+          {/* Legend */}
           <div className="flex items-center gap-6 mt-6 pt-4 border-t border-gray-100">
             {LEGEND_ITEMS.map((item) => (
-              <div key={item.key} className="flex items-center gap-1.5">
+              <div
+                key={item.key}
+                className="flex items-center gap-1.5"
+              >
                 <span
                   className="inline-block w-2.5 h-2.5 rounded-sm"
-                  style={{ backgroundColor: item.color }}
+                  style={{
+                    backgroundColor: item.color,
+                  }}
                 />
-                <span className="text-xs font-medium text-gray-500">{item.label}</span>
+
+                <span className="text-xs font-medium text-gray-500">
+                  {item.label}
+                </span>
               </div>
             ))}
           </div>

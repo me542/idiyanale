@@ -2,6 +2,7 @@ import { get } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
 export interface ServerResponse {
+  project_id: number;
   server_id: number;
   server_name: string;
   server_ip: string;
@@ -15,9 +16,8 @@ export interface GetServersResponse {
 }
 
 export async function getServers(): Promise<ServerResponse[]> {
-  const response = await get<GetServersResponse>(
-    ApiEndpoint.GET_SERVER
+  return get<ServerResponse[]>(
+    ApiEndpoint.GET_SERVER,
+    { unwrap: true }
   );
-
-  return response.data;
 }

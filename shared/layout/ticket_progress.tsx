@@ -6,6 +6,82 @@ import {
     ClipboardList,
 } from "lucide-react";
 import { InstitutionTicket, TicketUser } from "@/services/integration/ticket/get_all_ticket_by_insti";
+import { getTicketRemarks, TicketRemark } from "@/services/integration/remark/get_ticket_remarks";
+import { postTicketRemark } from "@/services/integration/remark/post_ticket_remark";
+import { getInstitutionResolverGroups } from "@/services/integration/institution/get-insti-by-id-resolver-group";
+
+// ---------------------------------------------------------------------------
+// Local-user helpers — reads from localStorage set by VerifyOtp.ts at login.
+// ---------------------------------------------------------------------------
+
+interface LocalUser {
+    id: number | null;
+    staffId: string;
+    roleName: string;
+    institutionId: number | null;
+    permissions: {
+        can_create: boolean;
+        can_endorse: boolean;
+        can_approve: boolean;
+        can_resolve: boolean;
+        can_audit: boolean;
+    };
+}
+
+function getLocalUserFull(): LocalUser {
+    const empty: LocalUser = {
+        id: null,
+        staffId: "",
+        roleName: "",
+        institutionId: null,
+        permissions: {
+            can_create: false,
+            can_endorse: false,
+            can_approve: false,
+            can_resolve: false,
+            can_audit: false,
+        },
+    };
+
+    if (typeof window === "undefined") return empty;
+
+    try {
+        const rawUser = localStorage.getItem("user");
+        const rawPerms = localStorage.getItem("permissions");
+        const rawInstiId = localStorage.getItem("institution_id");
+
+        const u = rawUser ? JSON.parse(rawUser) : null;
+        const p = rawPerms ? JSON.parse(rawPerms) : null;
+
+        return {
+            id: u?.id ?? null,
+            staffId: u?.staffId ?? "",
+            roleName: u?.roleName ?? localStorage.getItem("role") ?? "",
+            institutionId: rawInstiId ? Number(rawInstiId) : null,
+            permissions: {
+                can_create: p?.can_create ?? false,
+                can_endorse: p?.can_endorse ?? false,
+                can_approve: p?.can_approve ?? false,
+                can_resolve: p?.can_resolve ?? false,
+                can_audit: p?.can_audit ?? false,
+            },
+        };
+    } catch {
+        return empty;
+    }
+}
+
+// Read the logged-in user's display info from the JWT claims stored at login.
+function getLocalUser(): { label: string; initials: string } {
+    if (typeof window === "undefined") return { label: "Me", initials: "?" };
+    try {
+        const raw = localStorage.getItem("user");
+        const u = raw ? JSON.parse(raw) : null;
+        if (u?.staffId) return { label: String(u.staffId), initials: String(u.staffId).slice(0, 2).toUpperCase() };
+    } catch { /* ignore */ }
+    const role = localStorage.getItem("role") ?? "Me";
+    return { label: role, initials: role.slice(0, 2).toUpperCase() };
+}
 
 interface ApprovalStep {
     id: string;
@@ -226,10 +302,101 @@ export default function TicketDetailPanel({
     // second from the resolver's start time so it counts up like the mock.
     const [elapsedTick, setElapsedTick] = useState(0);
 
+    // Remarks state — fetched whenever the active ticket changes.
+    const [remarks, setRemarks] = useState<TicketRemark[]>([]);
+    const [remarksLoading, setRemarksLoading] = useState(false);
+    const remarksEndRef = useRef<HTMLDivElement>(null);
+
+    // ---------------------------------------------------------------------------
+    // Role-based permission state for approval-chain action buttons.
+    // ---------------------------------------------------------------------------
+
+    // Whether the logged-in user is a member of the ticket's resolver group.
+    const [isResolverGroupMember, setIsResolverGroupMember] = useState(false);
+
+    // Confirmation dialog — set to describe the pending action, null when closed.
+    const [pendingAction, setPendingAction] = useState<{
+        stepId: string;
+        kind: "accept" | "reject" | "hold" | "resume";
+        label: string;
+        description: string;
+    } | null>(null);
+
+    // Read the full local user once (it won't change while this panel is open).
+    const localUser = getLocalUserFull();
+
+    // canEndorse — the endorser is pre-assigned on the ticket; that user must
+    // also have the role's can_endorse permission before they can act.
+    const canEndorse =
+        localUser.id !== null &&
+        ticket?.endorser_id !== null &&
+        localUser.id === ticket?.endorser_id &&
+        localUser.permissions.can_endorse;
+
+    // canApprove — any user whose role carries the can_approve permission.
+    const canApprove = localUser.permissions.can_approve;
+
+    // canResolve — users must belong to this ticket's resolver group and have
+    // the role's can_resolve permission.
+    const canResolve =
+        isResolverGroupMember && localUser.permissions.can_resolve;
+
+    // Fetch the resolver groups for this ticket's institution and check
+    // if the logged-in user is in any active group.
+    useEffect(() => {
+        const institutionId = ticket?.institution_id ?? localUser.institutionId;
+        if (!institutionId || localUser.id === null) {
+            setIsResolverGroupMember(false);
+            return;
+        }
+
+        let cancelled = false;
+
+        getInstitutionResolverGroups(institutionId)
+            .then((res) => {
+                if (cancelled) return;
+                const groups = res.response ?? [];
+                const isMember = groups.some(
+                    (g) =>
+                        g.status === "active" &&
+                        g.member_ids.includes(localUser.id as number)
+                );
+                setIsResolverGroupMember(isMember);
+            })
+            .catch(() => {
+                if (!cancelled) setIsResolverGroupMember(false);
+            });
+
+        return () => { cancelled = true; };
+    // Re-check when the ticket changes (different institution) or when the
+    // panel opens for the first time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ticket?.institution_id, ticket?.ticket_id]);
+
     useEffect(() => {
         const id = setInterval(() => setElapsedTick((t) => t + 1), 1000);
         return () => clearInterval(id);
     }, []);
+
+    // Fetch remarks whenever the panel opens with a new ticket.
+    useEffect(() => {
+        if (!ticket?.ticket_id) {
+            setRemarks([]);
+            return;
+        }
+        let cancelled = false;
+        setRemarksLoading(true);
+        getTicketRemarks(ticket.ticket_id)
+            .then((data) => { if (!cancelled) setRemarks(data ?? []); })
+            .catch(() => { if (!cancelled) setRemarks([]); })
+            .finally(() => { if (!cancelled) setRemarksLoading(false); });
+        return () => { cancelled = true; };
+    }, [ticket?.ticket_id]);
+
+    // Scroll the remarks list to the bottom whenever new remarks arrive.
+    useEffect(() => {
+        remarksEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [remarks]);
 
     // Reflects the current selection's formatting state onto the toolbar
     // so active buttons (bold/italic/etc.) show as "on".
@@ -267,10 +434,11 @@ export default function TicketDetailPanel({
         setAttachments((prev) => prev.filter((_, i) => i !== index));
     }
 
-    const handleSend = () => {
+    const handleSend = async () => {
         const text = editorRef.current?.innerText?.trim() ?? "";
         if ((!text && attachments.length === 0) || !ticket) return;
-        onSendRemark?.(ticketId, text);
+
+        // Optimistically clear the editor immediately.
         if (editorRef.current) editorRef.current.innerHTML = "";
         setIsEmpty(true);
         setAttachments([]);
@@ -281,6 +449,18 @@ export default function TicketDetailPanel({
             strikeThrough: false,
             insertUnorderedList: false,
         });
+
+        try {
+            await postTicketRemark(text);
+            // Refresh the remarks list after a successful post.
+            const updated = await getTicketRemarks(ticket.ticket_id);
+            setRemarks(updated ?? []);
+        } catch {
+            // Silently fail — the editor is already cleared so no duplicate send.
+        }
+
+        // Still fire the optional prop so parent components can react.
+        onSendRemark?.(ticket.ticket_id, text);
     };
 
     // Keep toolbar active-state in sync when the caret moves via click or
@@ -299,10 +479,13 @@ export default function TicketDetailPanel({
     }, []);
 
     // Close the panel when clicking anywhere outside of it.
+    // Guard: do NOT close when the confirmation dialog is open — the dialog's
+    // backdrop sits outside the aside, so it would otherwise close the panel.
     useEffect(() => {
         if (!isOpen) return;
 
         function handleClickOutside(e: MouseEvent) {
+            if (pendingAction) return;
             if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
                 onClose();
             }
@@ -310,7 +493,7 @@ export default function TicketDetailPanel({
 
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [isOpen, onClose]);
+    }, [isOpen, onClose, pendingAction]);
 
     // Nothing to show yet and the panel isn't open — don't render anything.
     if (!ticket && !isOpen) return null;
@@ -320,13 +503,6 @@ export default function TicketDetailPanel({
     const approvalChain = ticket ? approvalChainFromTicket(ticket, completedSteps) : [];
 
     // NOTE: InstitutionTicket has no remarks/attachment fields yet.
-    const remarks: {
-        id: string | number;
-        author: string;
-        initials: string;
-        message: string;
-        timestamp?: string;
-    }[] = [];
 
     return (
         <>
@@ -526,12 +702,18 @@ export default function TicketDetailPanel({
                                                             </div>
                                                         </div>
 
-                                                        {isResolverRow && phase === "for_review" && (
+                                                        {/* ── Resolver row: for_review ── only group members can grab it */}
+                                                        {isResolverRow && phase === "for_review" && canResolve && (
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 <button
                                                                     type="button"
                                                                     aria-label="Accept assignment"
-                                                                    onClick={() => onAcceptStep?.(step.id)}
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "accept",
+                                                                        label: "Accept Assignment",
+                                                                        description: "Are you sure you want to accept this ticket assignment?",
+                                                                    })}
                                                                     className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     ACCEPT
@@ -539,7 +721,12 @@ export default function TicketDetailPanel({
                                                                 <button
                                                                     type="button"
                                                                     aria-label="Reject assignment"
-                                                                    onClick={() => onRejectStep?.(step.id)}
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "reject",
+                                                                        label: "Reject Assignment",
+                                                                        description: "Are you sure you want to reject this ticket assignment? The ticket will return to the pool.",
+                                                                    })}
                                                                     className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     REJECT
@@ -547,12 +734,18 @@ export default function TicketDetailPanel({
                                                             </div>
                                                         )}
 
-                                                        {isResolverRow && phase === "in_progress" && (
+                                                        {/* ── Resolver row: in_progress ── only the assigned resolver (group member) */}
+                                                        {isResolverRow && phase === "in_progress" && canResolve && (
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 <button
                                                                     type="button"
                                                                     aria-label={`Mark ${step.name} resolved`}
-                                                                    onClick={() => onAcceptStep?.(step.id)}
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "accept",
+                                                                        label: "Mark as Resolved",
+                                                                        description: "Are you sure you want to mark this ticket as resolved?",
+                                                                    })}
                                                                     className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     RESOLVED
@@ -560,7 +753,12 @@ export default function TicketDetailPanel({
                                                                 <button
                                                                     type="button"
                                                                     aria-label={`Put ${step.name} on hold`}
-                                                                    onClick={() => onHoldStep?.(step.id)}
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "hold",
+                                                                        label: "Put on Hold",
+                                                                        description: "Are you sure you want to put this ticket on hold?",
+                                                                    })}
                                                                     className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     HOLD
@@ -568,12 +766,18 @@ export default function TicketDetailPanel({
                                                             </div>
                                                         )}
 
-                                                        {isResolverRow && phase === "on_hold" && (
+                                                        {/* ── Resolver row: on_hold ── only the assigned resolver (group member) */}
+                                                        {isResolverRow && phase === "on_hold" && canResolve && (
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 <button
                                                                     type="button"
                                                                     aria-label={`Reject ${step.name}`}
-                                                                    onClick={() => onRejectStep?.(step.id)}
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "reject",
+                                                                        label: "Reject Ticket",
+                                                                        description: "Are you sure you want to reject this ticket? It will return to the pool.",
+                                                                    })}
                                                                     className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     REJECT
@@ -581,7 +785,12 @@ export default function TicketDetailPanel({
                                                                 <button
                                                                     type="button"
                                                                     aria-label={`Resume ${step.name}`}
-                                                                    onClick={() => onResumeStep?.(step.id)}
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "resume",
+                                                                        label: "Resume Ticket",
+                                                                        description: "Are you sure you want to resume work on this ticket?",
+                                                                    })}
                                                                     className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     RESUME
@@ -589,20 +798,63 @@ export default function TicketDetailPanel({
                                                             </div>
                                                         )}
 
-                                                        {!isResolverRow && step.pending && (
+                                                        {/* ── Endorser row ── only the assigned endorser can act */}
+                                                        {!isResolverRow && step.id === "endorsed" && step.pending && canEndorse && (
                                                             <div className="flex items-center gap-2 shrink-0">
                                                                 <button
                                                                     type="button"
-                                                                    aria-label={`Accept ${step.name}`}
-                                                                    onClick={() => onAcceptStep?.(step.id)}
+                                                                    aria-label="Accept endorsement"
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "accept",
+                                                                        label: "Accept Endorsement",
+                                                                        description: "Are you sure you want to endorse this ticket?",
+                                                                    })}
                                                                     className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     ACCEPT
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    aria-label={`Reject ${step.name}`}
-                                                                    onClick={() => onRejectStep?.(step.id)}
+                                                                    aria-label="Reject endorsement"
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "reject",
+                                                                        label: "Reject Endorsement",
+                                                                        description: "Are you sure you want to reject this endorsement? The ticket will be sent back.",
+                                                                    })}
+                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    REJECT
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {/* ── Approver row ── only users with can_approve permission */}
+                                                        {!isResolverRow && step.id === "approved" && step.pending && canApprove && (
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Accept approval"
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "accept",
+                                                                        label: "Approve Ticket",
+                                                                        description: "Are you sure you want to approve this ticket?",
+                                                                    })}
+                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    ACCEPT
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Reject approval"
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "reject",
+                                                                        label: "Reject Approval",
+                                                                        description: "Are you sure you want to reject this ticket? The ticket will be sent back.",
+                                                                    })}
                                                                     className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
                                                                     REJECT
@@ -634,30 +886,38 @@ export default function TicketDetailPanel({
                                     </div>
 
                                     <div className="flex-1 overflow-y-auto space-y-4 flex flex-col">
-                                        {remarks.length === 0 ? (
+                                        {remarksLoading ? (
+                                            <div className="flex-1 flex items-center justify-center text-xs text-gray-400 text-center">
+                                                Loading remarks…
+                                            </div>
+                                        ) : remarks.length === 0 ? (
                                             <div className="flex-1 flex items-center justify-center text-xs text-gray-400 text-center">
                                                 No remarks yet.
                                             </div>
                                         ) : (
-                                            remarks.map((r) => (
-                                                <div key={r.id} className="flex items-end justify-end gap-3">
-                                                    <div className="flex flex-col items-end max-w-[75%]">
-                                                        <div className="text-sm font-bold text-[#1E4637] mb-1">
-                                                            {r.author}
+                                            remarks.map((r) => {
+                                                const { label: authorName, initials: authorInitials } = getLocalUser();
+                                                return (
+                                                    <div key={r.id} className="flex items-end justify-end gap-3">
+                                                        <div className="flex flex-col items-end max-w-[75%]">
+                                                            <div className="text-sm font-bold text-[#1E4637] mb-1">
+                                                                {authorName}
+                                                            </div>
+                                                            <div className="bg-gray-100 rounded-2xl px-4 py-3 text-sm text-gray-700 w-full min-h-[3.25rem]">
+                                                                {r.reason}
+                                                            </div>
+                                                            <div className="text-[10px] text-gray-400 mt-1">
+                                                                {formatDate(r.created_at)}
+                                                            </div>
                                                         </div>
-                                                        <div className="bg-gray-100 rounded-2xl px-4 py-3 text-sm text-gray-700 w-full min-h-[3.25rem]">
-                                                            {r.message}
-                                                        </div>
-                                                        <div className="text-[10px] text-gray-400 mt-1">
-                                                            {r.timestamp}
+                                                        <div className="w-5 h-5 rounded-full bg-[#1E4637] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                                                            {authorInitials}
                                                         </div>
                                                     </div>
-                                                    <div className="w-5 h-5 rounded-full bg-[#1E4637] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                                                        {r.initials}
-                                                    </div>
-                                                </div>
-                                            ))
+                                                );
+                                            })
                                         )}
+                                        <div ref={remarksEndRef} />
                                     </div>
 
                                     <div className="mt-3 shrink-0 bg-gray-100 rounded-2xl overflow-hidden">
@@ -766,6 +1026,73 @@ export default function TicketDetailPanel({
                     </div>
                 )}
             </aside>
+
+            {/* ── Confirmation dialog ── rendered outside the aside so it sits
+                 in a true stacking context above the panel overlay. */}
+            {pendingAction && (
+                <div
+                    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+                        {/* Icon row */}
+                        <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-4 ${
+                            pendingAction.kind === "accept" || pendingAction.kind === "resume"
+                                ? "bg-emerald-100"
+                                : pendingAction.kind === "hold"
+                                ? "bg-amber-100"
+                                : "bg-rose-100"
+                        }`}>
+                            {(pendingAction.kind === "accept" || pendingAction.kind === "resume") && (
+                                <Check size={20} className="text-emerald-600" strokeWidth={2.5} />
+                            )}
+                            {pendingAction.kind === "hold" && (
+                                <span className="text-amber-600 font-bold text-sm">||</span>
+                            )}
+                            {pendingAction.kind === "reject" && (
+                                <X size={20} className="text-rose-600" strokeWidth={2.5} />
+                            )}
+                        </div>
+
+                        <h3 className="text-sm font-bold text-[#1E4637] mb-1">
+                            {pendingAction.label}
+                        </h3>
+                        <p className="text-sm text-gray-500 mb-5">
+                            {pendingAction.description}
+                        </p>
+
+                        <div className="flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setPendingAction(null)}
+                                className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const { stepId, kind } = pendingAction;
+                                    setPendingAction(null);
+                                    if (kind === "accept") onAcceptStep?.(stepId);
+                                    else if (kind === "reject") onRejectStep?.(stepId);
+                                    else if (kind === "hold") onHoldStep?.(stepId);
+                                    else if (kind === "resume") onResumeStep?.(stepId);
+                                }}
+                                className={`rounded-lg px-4 py-2 text-xs font-bold text-white transition-colors ${
+                                    pendingAction.kind === "accept" || pendingAction.kind === "resume"
+                                        ? "bg-emerald-500 hover:bg-emerald-600"
+                                        : pendingAction.kind === "hold"
+                                        ? "bg-amber-500 hover:bg-amber-600"
+                                        : "bg-rose-500 hover:bg-rose-600"
+                                }`}
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 }

@@ -10,18 +10,15 @@ export interface ProjectResponse {
   status: string;
 }
 
-export interface GetProjectsResponse {
-  code: string;
-  message: string;
-  data: ProjectResponse[];
-}
-
-export async function getProjectsByServerId(
+/**
+ * Fetch all projects that belong to a given server.
+ * Backend: GET /api/v1/project/get/projects/:server_id
+ */
+export async function getProjectsByServerID(
   serverId: number | string
 ): Promise<ProjectResponse[]> {
-  const response = await get<GetProjectsResponse>(
-    ApiEndpoint.GET_PROJECT(serverId)
+  return get<ProjectResponse[]>(
+    ApiEndpoint.GET_PROJECT(serverId),
+    { unwrap: true }
   );
-
-  return response.data;
 }

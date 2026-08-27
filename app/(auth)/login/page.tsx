@@ -15,11 +15,36 @@ import Link from "next/link";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Page = "login" | "verification";
+type PendingOtp = {
+  staffId: string;
+  expiresAt: number;
+};
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const BRAND_GREEN = "#1B5E3B";
 const CODE_LENGTH = 6;
 const COUNTDOWN_SECONDS = 300; // 5:00
+const PENDING_OTP_STORAGE_KEY = "pendingOtp";
+
+function getPendingOtp(): PendingOtp | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const pendingOtp = JSON.parse(
+      sessionStorage.getItem(PENDING_OTP_STORAGE_KEY) ?? "null"
+    ) as PendingOtp | null;
+
+    if (!pendingOtp || pendingOtp.expiresAt <= Date.now()) {
+      sessionStorage.removeItem(PENDING_OTP_STORAGE_KEY);
+      return null;
+    }
+
+    return pendingOtp;
+  } catch {
+    sessionStorage.removeItem(PENDING_OTP_STORAGE_KEY);
+    return null;
+  }
+}
 
 // ─── Step Indicator ───────────────────────────────────────────────────────────
 function StepIndicator({ current }: { current: 1 | 2 }) {
@@ -145,8 +170,10 @@ function Card({ children }: { children: React.ReactNode }) {
 // ─── Login Page ───────────────────────────────────────────────────────────────
 function LoginPage({
   onContinue,
+  pendingOtp,
 }: {
-  onContinue: (staffId: string) => void;
+  onContinue: (staffId: string, isNewOtp: boolean) => void;
+  pendingOtp: PendingOtp | null;
 }) {
   const [staffId, setStaffId] = useState("");
   const [error, setError] = useState("");
@@ -162,9 +189,20 @@ function LoginPage({
     setLoading(true);
     setError("");
 
-    await loginOTP(staffId);
+    const normalizedStaffId = staffId.trim();
+    const hasPendingOtp =
+      pendingOtp?.staffId === normalizedStaffId &&
+      pendingOtp.expiresAt > Date.now();
 
-    await onContinue(staffId.trim());
+    // The server keeps an OTP challenge active until it expires. Re-open that
+    // challenge after Back instead of creating a second login attempt.
+    if (hasPendingOtp) {
+      onContinue(normalizedStaffId, false);
+      return;
+    }
+
+    await loginOTP(normalizedStaffId);
+    onContinue(normalizedStaffId, true);
   } catch (err: unknown) {
     setError((err as Error).message || "Failed to send OTP");
   } finally {
@@ -271,7 +309,15 @@ function LoginPage({
 }
 
 // ─── Verification Page ────────────────────────────────────────────────────────
-function VerificationPage({ staffId, onBack }: { staffId: string; onBack: () => void }) {
+function VerificationPage({
+  staffId,
+  onBack,
+  onVerified,
+}: {
+  staffId: string;
+  onBack: () => void;
+  onVerified: () => void;
+}) {
   const router = useRouter();
   const [code, setCode] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const [timeLeft, setTimeLeft] = useState(COUNTDOWN_SECONDS);
@@ -357,8 +403,9 @@ function VerificationPage({ staffId, onBack }: { staffId: string; onBack: () => 
       // so we must also set an actual cookie here.
       document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24 * 7}`;
 
+      onVerified();
       setSuccess(true);
-      router.replace("/ticket/dashboard");
+      router.replace("/Dashboard");
     } catch (err: unknown) {
       setError((err as Error)?.message || "Invalid OTP");
     } finally {
@@ -513,6 +560,29 @@ function VerificationPage({ staffId, onBack }: { staffId: string; onBack: () => 
 export default function AuthPage() {
   const [page, setPage] = useState<Page>("login");
   const [staffId, setStaffId] = useState("");
+  const [pendingOtp, setPendingOtp] = useState<PendingOtp | null>(getPendingOtp);
+
+  const clearPendingOtp = () => {
+    setPendingOtp(null);
+    sessionStorage.removeItem(PENDING_OTP_STORAGE_KEY);
+  };
+
+  const continueToVerification = (id: string, isNewOtp: boolean) => {
+    if (isNewOtp) {
+      const nextPendingOtp = {
+        staffId: id,
+        expiresAt: Date.now() + COUNTDOWN_SECONDS * 1000,
+      };
+      setPendingOtp(nextPendingOtp);
+      sessionStorage.setItem(
+        PENDING_OTP_STORAGE_KEY,
+        JSON.stringify(nextPendingOtp)
+      );
+    }
+
+    setStaffId(id);
+    setPage("verification");
+  };
 
   return (
     <div style={{
@@ -521,9 +591,16 @@ export default function AuthPage() {
     }}>
       <div style={{ width: "100%", maxWidth: 900 }}>
         {page === "login" ? (
-          <LoginPage onContinue={(id) => { setStaffId(id); setPage("verification"); }} />
+          <LoginPage
+            onContinue={continueToVerification}
+            pendingOtp={pendingOtp}
+          />
         ) : (
-          <VerificationPage staffId={staffId} onBack={() => setPage("login")} />
+          <VerificationPage
+            staffId={staffId}
+            onBack={() => setPage("login")}
+            onVerified={clearPendingOtp}
+          />
         )}
       </div>
     </div>

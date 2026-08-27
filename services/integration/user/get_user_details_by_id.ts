@@ -30,6 +30,7 @@ export interface UserDetails {
   last_name: string;
   email: string;
   phone_no: string;
+
   institution_id: number;
   institution: UserInstitution;
 
@@ -37,6 +38,7 @@ export interface UserDetails {
   job_position: UserJobPosition;
 
   role: UserRole;
+
   status: string;
   last_login?: string;
   is_logged_in: boolean;
@@ -44,9 +46,9 @@ export interface UserDetails {
 }
 
 export interface GetUserByIDResponse {
-  response?: UserDetails;
-  message?: string;
-  ret_code?: string;
+  response: UserDetails;
+  message: string;
+  ret_code: string;
 }
 
 export const getUserByID = async (

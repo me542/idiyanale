@@ -89,7 +89,7 @@ export function ProfileSidebar({
       </nav>
 
       {/* Theme toggle */}
-      <div className="mt-6 flex items-center gap-3 border-t border-slate-100 pt-4">
+      {/* <div className="mt-6 flex items-center gap-3 border-t border-slate-100 pt-4">
         <span className="text-sm font-medium text-slate-500">
           Theme Mode:
         </span>
@@ -98,7 +98,7 @@ export function ProfileSidebar({
           checked={themeOn}
           onChange={onToggleTheme}
         />
-      </div>
+      </div> */}
     </div>
   );
 }

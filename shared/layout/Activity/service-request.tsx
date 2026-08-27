@@ -520,7 +520,7 @@ export default function NewTicketPanelView({
             try {
                 const res = await getUsersByInstitutionId(institutionId);
 
-                const users = (res?.response ?? []).filter(
+                const users = (res ?? []).filter(
                     (u: UserDetails) => u.status === "active" // remove if status shouldn't gate visibility
                 );
 

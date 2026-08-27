@@ -23,6 +23,7 @@ export const ROUTES: AppRoute[] = [
   { path: "/setting/top", title: "Top", clickable: true },
   { path: "/setting/template", title: "Template", clickable: true },
   { path: "/setting/user-management", title: "User Management", clickable: true },
+    { path: "/setting/server-management", title: "Server Management", clickable: true },
 
   // super-admin
   { path: "/dashboard", title: "Dashboard", clickable: true },

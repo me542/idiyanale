@@ -3,17 +3,24 @@ import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
 export type UserStatus = "pending" | "active" | "disabled";
 
+export interface ChangeUserStatusRequest {
+  status: UserStatus;
+}
+
 export interface ChangeUserStatusResponse {
-  response?: null;
+  code?: string;
   message?: string;
+  data?: null;
+  response?: null;
   ret_code?: string;
 }
 
-export const changeUserStatus = async (
-  id: number | string,
-  status: UserStatus
-): Promise<ChangeUserStatusResponse> => {
-  return patch(ApiEndpoint.PATCH_CHANGED_USER_STATUS(id), {
-    status,
-  });
-};
+export async function changeUserStatus(
+  userId: number | string,
+  payload: ChangeUserStatusRequest
+): Promise<ChangeUserStatusResponse> {
+  return patch<ChangeUserStatusResponse>(
+    ApiEndpoint.PATCH_CHANGED_USER_STATUS(userId),
+    payload
+  );
+}
