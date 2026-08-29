@@ -10,6 +10,7 @@ export interface Role {
   can_approve: boolean;
   can_resolve: boolean;
   can_audit: boolean;
+  status: string;
   created_at: string;
   updated_at: string;
 }

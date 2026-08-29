@@ -23,6 +23,10 @@ import {
 } from "@/services/integration/super_admin/patch_user_status";
 
 import { changeRoleToAdmin } from "@/services/integration/super_admin/patch_role_admin";
+import { changeUserRole } from "@/services/integration/role/patch_changed_user_role";
+import { getRolesByInstitution, type Role } from "@/services/integration/role/get_role_by_insti";
+import { addRole } from "@/services/integration/role/post_role";
+import { editRole, toggleRoleStatus } from "@/services/integration/role/patch_user_role";
 
 import {
   getPositionsByInstitutionId,
@@ -205,6 +209,42 @@ export default function UserManagementPage() {
   const [positionError, setPositionError] =
     useState<string | null>(null);
 
+  const [institutionRoles, setInstitutionRoles] =
+    useState<Role[]>([]);
+
+  const [showAddRoleModal, setShowAddRoleModal] =
+    useState(false);
+
+  const [newRoleName, setNewRoleName] =
+    useState("");
+
+  const [newRolePermissions, setNewRolePermissions] =
+    useState({
+      can_create: false,
+      can_endorse: false,
+      can_approve: false,
+      can_resolve: false,
+      can_audit: false,
+    });
+
+  const [savingRoleStatusIds, setSavingRoleStatusIds] =
+    useState<Set<number>>(new Set());
+
+  const [editingRole, setEditingRole] =
+    useState<Role | null>(null);
+
+  const [editRoleName, setEditRoleName] =
+    useState("");
+
+  const [editRolePermissions, setEditRolePermissions] =
+    useState({
+      can_create: false,
+      can_endorse: false,
+      can_approve: false,
+      can_resolve: false,
+      can_audit: false,
+    });
+
   /*
    * Controls Add User modal.
    */
@@ -238,8 +278,8 @@ export default function UserManagementPage() {
    * Which role is selected in the Roles tab, drives the
    * Permission panel on the right.
    */
-  const [selectedRole, setSelectedRole] =
-    useState<string | null>(null);
+  const [selectedRoleId, setSelectedRoleId] =
+    useState<number | null>(null);
 
   /* ============================================================
      LOAD DATA — SCOPED TO THE LOGGED-IN USER'S INSTITUTION
@@ -291,14 +331,17 @@ export default function UserManagementPage() {
         return;
       }
 
-      const [users, positions] = await Promise.all([
+      const [users, positions, rolesRes] = await Promise.all([
         getUsersByInstitution(ownInstitution.institution_id),
         getPositionsByInstitutionId(ownInstitution.institution_id),
+        getRolesByInstitution(ownInstitution.institution_id).catch(() => ({ response: [] as Role[] })),
       ]);
 
       setGroups([
         toGroup(ownInstitution, users, positions.response ?? []),
       ]);
+
+      setInstitutionRoles(rolesRes.response ?? []);
     } catch (err) {
       console.error(
         "Failed to load institution/user data:",
@@ -322,6 +365,7 @@ export default function UserManagementPage() {
      ============================================================ */
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -330,6 +374,7 @@ export default function UserManagementPage() {
    * never lands on an empty page.
    */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1);
   }, [searchQuery, roleFilter, itemsPerPage]);
 
@@ -498,7 +543,8 @@ export default function UserManagementPage() {
   async function updateStaffRole(
     groupId: string,
     staffId: string,
-    nextRole: string
+    nextRoleId: number,
+    nextRoleName: string
   ) {
     const group = groups.find(
       (group) => group.id === groupId
@@ -508,19 +554,11 @@ export default function UserManagementPage() {
       (staff) => staff.id === staffId
     );
 
-    if (!staff || staff.roleName === nextRole) {
+    if (!staff || staff.roleName === nextRoleName) {
       return;
     }
 
     const previousRole = staff.roleName;
-
-    /*
-     * Currently available API changes the user
-     * specifically to Insti-Admin.
-     */
-    if (nextRole !== "Insti-Admin") {
-      return;
-    }
 
     /*
      * Optimistic update.
@@ -529,7 +567,7 @@ export default function UserManagementPage() {
       groupId,
       staffId,
       {
-        roleName: nextRole,
+        roleName: nextRoleName,
       }
     );
 
@@ -542,8 +580,9 @@ export default function UserManagementPage() {
     setRoleError(null);
 
     try {
-      await changeRoleToAdmin(
-        Number(staffId)
+      await changeUserRole(
+        Number(staffId),
+        { role_id: nextRoleId }
       );
     } catch (err) {
       /*
@@ -705,6 +744,68 @@ export default function UserManagementPage() {
 
   function goToPage(next: number) {
     setPage(Math.min(Math.max(next, 1), totalPages));
+  }
+
+  /*
+   * Users belonging to the role currently selected in the
+   * Roles tab. Drives the "User" rows in the Permission panel
+   * on the right — one row per user, sharing that role's
+   * permission columns (permissions live on the role, not
+   * per-user).
+   */
+  const selectedRoleObj = useMemo(
+    () =>
+      selectedRoleId !== null
+        ? institutionRoles.find((r) => r.role_id === selectedRoleId) ?? null
+        : null,
+    [institutionRoles, selectedRoleId]
+  );
+
+  /*
+   * The users shown in the Permission panel. If a role is
+   * selected in the list on the left, narrow to that role's
+   * users; otherwise show every user across every role right
+   * away, so the panel isn't empty until something is clicked.
+   */
+  const permissionPanelUsers = useMemo(() => {
+    if (!selectedRoleObj) return flatStaff;
+    const target = selectedRoleObj.role_name.trim().toLowerCase();
+    return flatStaff.filter(
+      (staff) => staff.roleName.trim().toLowerCase() === target
+    );
+  }, [flatStaff, selectedRoleObj]);
+
+  /*
+   * Pagination for the Permission panel's user list.
+   */
+  const [roleItemsPerPage, setRoleItemsPerPage] = useState(
+    ITEMS_PER_PAGE_OPTIONS[0]
+  );
+  const [rolePage, setRolePage] = useState(1);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRolePage(1);
+  }, [selectedRoleId, roleItemsPerPage]);
+
+  const roleUsersTotal = permissionPanelUsers.length;
+  const roleUsersTotalPages = Math.max(
+    1,
+    Math.ceil(roleUsersTotal / roleItemsPerPage)
+  );
+  const roleSafePage = Math.min(rolePage, roleUsersTotalPages);
+  const roleUsersPageStart = (roleSafePage - 1) * roleItemsPerPage;
+  const roleUsersPageEnd = Math.min(
+    roleUsersPageStart + roleItemsPerPage,
+    roleUsersTotal
+  );
+  const rolePageUsers = permissionPanelUsers.slice(
+    roleUsersPageStart,
+    roleUsersPageStart + roleItemsPerPage
+  );
+
+  function goToRolePage(next: number) {
+    setRolePage(Math.min(Math.max(next, 1), roleUsersTotalPages));
   }
 
   /* ============================================================
@@ -1056,15 +1157,26 @@ export default function UserManagementPage() {
                                         <td className="py-3.5 pr-4">
                                           <div className="relative inline-flex items-center">
                                             <select
-                                              value={staff.roleName}
-                                              disabled={isRoleSaving}
-                                              onChange={(event) =>
-                                                updateStaffRole(
-                                                  group.id,
-                                                  staff.id,
-                                                  event.target.value
-                                                )
+                                              value={
+                                                institutionRoles.find(
+                                                  (r) => r.role_name === staff.roleName
+                                                )?.role_id ?? ""
                                               }
+                                              disabled={isRoleSaving}
+                                              onChange={(event) => {
+                                                const selectedRoleId = Number(event.target.value);
+                                                const selectedRole = institutionRoles.find(
+                                                  (r) => r.role_id === selectedRoleId
+                                                );
+                                                if (selectedRole) {
+                                                  updateStaffRole(
+                                                    group.id,
+                                                    staff.id,
+                                                    selectedRole.role_id,
+                                                    selectedRole.role_name
+                                                  );
+                                                }
+                                              }}
                                               className={`cursor-pointer appearance-none rounded-md py-1 pl-2.5 pr-7 text-[12px] font-semibold outline-none transition disabled:cursor-not-allowed disabled:opacity-50 ${
                                                 staff.roleName.toLowerCase() ===
                                                 "insti-admin"
@@ -1072,15 +1184,14 @@ export default function UserManagementPage() {
                                                   : "bg-[#F5F6F8] text-[#5B616B]"
                                               }`}
                                             >
-                                              <option value={staff.roleName}>
-                                                {staff.roleName}
-                                              </option>
-                                              {staff.roleName.toLowerCase() !==
-                                                "insti-admin" && (
-                                                <option value="Insti-Admin">
-                                                  Insti-Admin
+                                              {institutionRoles.map((role) => (
+                                                <option
+                                                  key={role.role_id}
+                                                  value={role.role_id}
+                                                >
+                                                  {role.role_name}
                                                 </option>
-                                              )}
+                                              ))}
                                             </select>
                                             <ChevronIcon className="pointer-events-none absolute right-2 h-3 w-3" />
                                           </div>
@@ -1232,42 +1343,94 @@ export default function UserManagementPage() {
                   <button
                     type="button"
                     title="Add role"
+                    onClick={() => setShowAddRoleModal(true)}
                     className="flex h-7 w-7 items-center justify-center rounded-full bg-[#6FCF97] text-white transition hover:bg-[#5FBF88]"
                   >
                     <PlusIcon className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 border-b border-[#F0F1F3] pb-2 text-[11px] uppercase tracking-[0.08em] text-[#9AA0A8]">
+                <div className="grid grid-cols-[1fr_80px_60px] gap-2 border-b border-[#F0F1F3] pb-2 text-[11px] uppercase tracking-[0.08em] text-[#9AA0A8]">
                   <span>Role Name</span>
                   <span>Status</span>
+                  <span></span>
                 </div>
 
-                {availableRoles.length === 0 ? (
-                  <p className="py-6 text-center text-[13px] text-[#9AA0A8]">
-                    No roles found yet.
-                  </p>
-                ) : (
-                  availableRoles.map((role) => (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => setSelectedRole(role)}
-                      className={`grid w-full grid-cols-2 items-center gap-2 rounded-lg px-1 py-3 text-left transition ${
-                        selectedRole === role
-                          ? "bg-[#F5F6F8]"
-                          : "hover:bg-[#FAFBFC]"
-                      }`}
-                    >
-                      <span className="text-[13px] font-bold text-[#1F3D33]">
-                        {role}
-                      </span>
-                      <span className="inline-flex w-fit items-center gap-1 rounded-full bg-[#6FCF97] px-3 py-1 text-[12px] font-semibold text-white">
-                        Active
-                      </span>
-                    </button>
-                  ))
-                )}
+                <div className="max-h-[560px] overflow-y-auto pr-1">
+                  {institutionRoles.length === 0 ? (
+                    <p className="py-6 text-center text-[13px] text-[#9AA0A8]">
+                      No roles found yet.
+                    </p>
+                  ) : (
+                    institutionRoles.map((role) => (
+                      <div
+                        key={role.role_id}
+                        className={`grid grid-cols-[1fr_80px_60px] items-center gap-2 rounded-lg px-1 py-3 transition ${
+                          selectedRoleId === role.role_id
+                            ? "bg-[#F5F6F8]"
+                            : "hover:bg-[#FAFBFC]"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRoleId(role.role_id)}
+                          className="text-left text-[13px] font-bold text-[#1F3D33] truncate"
+                        >
+                          {role.role_name}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingRoleStatusIds.has(role.role_id)}
+                          onClick={async () => {
+                            setSavingRoleStatusIds((prev) => new Set(prev).add(role.role_id));
+                            try {
+                              const res = await toggleRoleStatus(role.role_id);
+                              setInstitutionRoles((prev) =>
+                                prev.map((r) =>
+                                  r.role_id === role.role_id
+                                    ? { ...r, status: res.response?.status ?? (r.status === "active" ? "inactive" : "active") }
+                                    : r
+                                )
+                              );
+                            } catch {
+                              // ignore
+                            }
+                            setSavingRoleStatusIds((prev) => {
+                              const next = new Set(prev);
+                              next.delete(role.role_id);
+                              return next;
+                            });
+                          }}
+                          className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold transition disabled:opacity-50 ${
+                            role.status === "active"
+                              ? "bg-[#6FCF97] text-white"
+                              : "bg-[#F1F2F4] text-[#8A9099]"
+                          }`}
+                        >
+                          {role.status === "active" ? "Active" : "Inactive"}
+                        </button>
+                        <button
+                          type="button"
+                          title="Edit role"
+                          onClick={() => {
+                            setEditingRole(role);
+                            setEditRoleName(role.role_name);
+                            setEditRolePermissions({
+                              can_create: role.can_create,
+                              can_endorse: role.can_endorse,
+                              can_approve: role.can_approve,
+                              can_resolve: role.can_resolve,
+                              can_audit: role.can_audit,
+                            });
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-[#8A9099] transition hover:bg-[#E7E9ED] hover:text-[#3C4046]"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
 
               <div className="rounded-2xl border border-[#E7E9ED] bg-white p-5 shadow-sm">
@@ -1276,12 +1439,223 @@ export default function UserManagementPage() {
                 </h2>
 
                 <PermissionTable
-                  staff={flatStaff.filter(
-                    (staff) =>
-                      !selectedRole ||
-                      staff.roleName === selectedRole
-                  )}
+                  roles={institutionRoles}
+                  users={rolePageUsers}
+                  onUpdate={async (roleId, data) => {
+                    await editRole(roleId, data);
+                    setInstitutionRoles((prev) =>
+                      prev.map((r) =>
+                        r.role_id === roleId
+                          ? { ...r, ...data }
+                          : r
+                      )
+                    );
+                  }}
                 />
+
+                {/* ==============================================
+                    PERMISSION PANEL — PAGINATION
+                ============================================== */}
+                {roleUsersTotal > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
+                    <div className="flex items-center gap-2 text-[13px] text-[#9AA0A8]">
+                      <span>Items:</span>
+                      <div className="relative inline-flex items-center">
+                        <select
+                          value={roleItemsPerPage}
+                          onChange={(event) =>
+                            setRoleItemsPerPage(Number(event.target.value))
+                          }
+                          className="cursor-pointer appearance-none rounded-md border border-[#E1E3E7] bg-white py-1 pl-2.5 pr-6 text-[13px] font-medium text-[#5B616B] outline-none"
+                        >
+                          {ITEMS_PER_PAGE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronIcon className="pointer-events-none absolute right-2 h-3 w-3" />
+                      </div>
+
+                      <span>
+                        Showing {roleUsersTotal === 0 ? 0 : roleUsersPageStart + 1} -{" "}
+                        {roleUsersPageEnd} of {roleUsersTotal} records
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[13px] text-[#9AA0A8]">
+                      <button
+                        type="button"
+                        onClick={() => goToRolePage(1)}
+                        disabled={roleSafePage === 1}
+                        className="flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-[#F5F6F8] disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="First page"
+                      >
+                        «
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => goToRolePage(roleSafePage - 1)}
+                        disabled={roleSafePage === 1}
+                        className="flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-[#F5F6F8] disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Previous page"
+                      >
+                        ‹
+                      </button>
+
+                      <span className="min-w-[24px] text-center font-semibold text-[#3C4046]">
+                        {roleSafePage}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => goToRolePage(roleSafePage + 1)}
+                        disabled={roleSafePage === roleUsersTotalPages}
+                        className="flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-[#F5F6F8] disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Next page"
+                      >
+                        ›
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => goToRolePage(roleUsersTotalPages)}
+                        disabled={roleSafePage === roleUsersTotalPages}
+                        className="flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-[#F5F6F8] disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Last page"
+                      >
+                        »
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================
+              ADD ROLE MODAL
+          ====================================================== */}
+          {showAddRoleModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="text-sm font-bold text-[#1F3D33] mb-4">Add New Role</h3>
+                <input
+                  type="text"
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value)}
+                  placeholder="Role name"
+                  className="w-full mb-4 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#1F3D33]"
+                />
+                <div className="space-y-2 mb-4">
+                  {(["can_create", "can_endorse", "can_approve", "can_resolve", "can_audit"] as const).map((perm) => (
+                    <label key={perm} className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={newRolePermissions[perm]}
+                        onChange={(e) => setNewRolePermissions((prev) => ({ ...prev, [perm]: e.target.checked }))}
+                        className="h-4 w-4 rounded accent-[#1F3D33]"
+                      />
+                      {perm.replace("can_", "Can ").replace("_", " ")}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddRoleModal(false); setNewRoleName(""); }}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!newRoleName.trim()}
+                    onClick={async () => {
+                      if (!newRoleName.trim()) return;
+                      try {
+                        await addRole({
+                          role_name: newRoleName.trim(),
+                          ...newRolePermissions,
+                        });
+                        await loadData();
+                        setShowAddRoleModal(false);
+                        setNewRoleName("");
+                        setNewRolePermissions({ can_create: false, can_endorse: false, can_approve: false, can_resolve: false, can_audit: false });
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    className="rounded-lg bg-[#1F3D33] px-4 py-2 text-xs font-bold text-white hover:bg-[#2B5245] disabled:opacity-40"
+                  >
+                    Add Role
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================
+              EDIT ROLE MODAL
+          ====================================================== */}
+          {editingRole && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="text-sm font-bold text-[#1F3D33] mb-4">Edit Role</h3>
+                <input
+                  type="text"
+                  value={editRoleName}
+                  onChange={(e) => setEditRoleName(e.target.value)}
+                  placeholder="Role name"
+                  className="w-full mb-4 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#1F3D33]"
+                />
+                <div className="space-y-2 mb-4">
+                  {(["can_create", "can_endorse", "can_approve", "can_resolve", "can_audit"] as const).map((perm) => (
+                    <label key={perm} className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={editRolePermissions[perm]}
+                        onChange={(e) => setEditRolePermissions((prev) => ({ ...prev, [perm]: e.target.checked }))}
+                        className="h-4 w-4 rounded accent-[#1F3D33]"
+                      />
+                      {perm.replace("can_", "Can ").replace("_", " ")}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingRole(null)}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!editRoleName.trim()}
+                    onClick={async () => {
+                      if (!editRoleName.trim()) return;
+                      try {
+                        await editRole(editingRole.role_id, {
+                          role_name: editRoleName.trim(),
+                          ...editRolePermissions,
+                        });
+                        setInstitutionRoles((prev) =>
+                          prev.map((r) =>
+                            r.role_id === editingRole.role_id
+                              ? { ...r, role_name: editRoleName.trim(), ...editRolePermissions }
+                              : r
+                          )
+                        );
+                        setEditingRole(null);
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    className="rounded-lg bg-[#1F3D33] px-4 py-2 text-xs font-bold text-white hover:bg-[#2B5245] disabled:opacity-40"
+                  >
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1303,68 +1677,151 @@ export default function UserManagementPage() {
 }
 
 /* ============================================================
-   PERMISSION TABLE (Roles / Permissions tabs)
-   Local, display-only checkboxes until a real permissions
-   API is available — nothing here is persisted.
+   PERMISSION TABLE
+   Lists users and their permission checkboxes right away — no
+   role selection required. Each row looks up its own role's
+   permissions independently, so users with different roles can
+   be shown together. Permissions live on the role record, not
+   per-user, so toggling a checkbox updates that row's role
+   (and therefore every other user sharing it).
    ============================================================ */
 
-function PermissionTable({ staff }: { staff: FlatStaff[] }) {
-  if (staff.length === 0) {
+type PermissionKey =
+  | "can_endorse"
+  | "can_create"
+  | "can_approve"
+  | "can_resolve";
+
+const PERMISSION_COLUMNS: { key: PermissionKey; label: string }[] = [
+  { key: "can_endorse", label: "Can Endorsed" },
+  { key: "can_create", label: "Can Create" },
+  { key: "can_approve", label: "Can Approved" },
+  { key: "can_resolve", label: "Can Resolved" },
+];
+
+function PermissionTable({
+  roles,
+  users,
+  onUpdate,
+}: {
+  roles: Role[];
+  users: FlatStaff[];
+  onUpdate: (
+    roleId: number,
+    data: import("@/services/integration/role/post_role").AddRoleRequest
+  ) => Promise<void>;
+}) {
+  const [localRoles, setLocalRoles] = useState(roles);
+  const [savingRoleIds, setSavingRoleIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLocalRoles(roles);
+  }, [roles]);
+
+  function findRoleForUser(user: FlatStaff): Role | null {
+    const target = user.roleName.trim().toLowerCase();
     return (
-      <p className="py-10 text-center text-[13px] text-[#9AA0A8]">
-        No users to show for this selection.
-      </p>
+      localRoles.find(
+        (r) => r.role_name.trim().toLowerCase() === target
+      ) ?? null
     );
   }
 
-  const columns = [
-    "Can Endorsed",
-    "Can Create",
-    "Can Approved",
-    "Can Resolved",
-  ];
+  async function handleToggle(role: Role, perm: PermissionKey) {
+    const updated = { ...role, [perm]: !role[perm] };
+
+    setLocalRoles((prev) =>
+      prev.map((r) => (r.role_id === role.role_id ? updated : r))
+    );
+    setSavingRoleIds((prev) => new Set(prev).add(role.role_id));
+
+    try {
+      await onUpdate(role.role_id, {
+        role_name: updated.role_name,
+        can_create: updated.can_create,
+        can_endorse: updated.can_endorse,
+        can_approve: updated.can_approve,
+        can_resolve: updated.can_resolve,
+        can_audit: updated.can_audit,
+      });
+    } catch {
+      // Rollback on error
+      setLocalRoles((prev) =>
+        prev.map((r) => (r.role_id === role.role_id ? role : r))
+      );
+    }
+
+    setSavingRoleIds((prev) => {
+      const next = new Set(prev);
+      next.delete(role.role_id);
+      return next;
+    });
+  }
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] border-collapse text-left">
+      <table className="w-full min-w-[680px] border-collapse text-left">
         <thead>
           <tr className="border-b border-[#E7E9ED] text-[11px] uppercase tracking-[0.08em] text-[#9AA0A8]">
             <th className="py-3 pr-4 font-semibold">User</th>
             <th className="py-3 pr-4 font-semibold">Role</th>
-            {columns.map((column) => (
-              <th key={column} className="py-3 pr-4 font-semibold">
-                {column}
+            {PERMISSION_COLUMNS.map((col) => (
+              <th key={col.key} className="py-3 pr-4 font-semibold">
+                {col.label}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {staff.map((person) => (
-            <tr
-              key={person.id}
-              className="border-b border-[#F0F1F3] hover:bg-[#FAFBFC]"
-            >
-              <td className="py-3.5 pr-4 text-[13px] font-bold text-[#1F3D33]">
-                {person.firstName} {person.lastName}
+          {users.length === 0 ? (
+            <tr>
+              <td
+                colSpan={2 + PERMISSION_COLUMNS.length}
+                className="py-10 text-center text-[13px] text-[#9AA0A8]"
+              >
+                No users found.
               </td>
-              <td className="py-3.5 pr-4 text-[13px] font-semibold text-[#5B616B]">
-                {person.roleName}
-              </td>
-              {columns.map((column) => (
-                <td key={column} className="py-3.5 pr-4">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-[#D9DCE1] text-[#1F3D33] accent-[#1F3D33]"
-                  />
-                </td>
-              ))}
             </tr>
-          ))}
+          ) : (
+            users.map((user) => {
+              const role = findRoleForUser(user);
+              const isSaving = role
+                ? savingRoleIds.has(role.role_id)
+                : false;
+
+              return (
+                <tr
+                  key={user.id}
+                  className="border-b border-[#F0F1F3] hover:bg-[#FAFBFC]"
+                >
+                  <td className="py-3.5 pr-4 text-[13px] font-bold text-[#1F3D33]">
+                    {user.firstName} {user.lastName}
+                  </td>
+                  <td className="py-3.5 pr-4 text-[13px] font-bold text-[#1F3D33]">
+                    {user.roleName}
+                  </td>
+                  {PERMISSION_COLUMNS.map((col) => (
+                    <td key={col.key} className="py-3.5 pr-4">
+                      <input
+                        type="checkbox"
+                        checked={role ? !!role[col.key] : false}
+                        onChange={() => role && handleToggle(role, col.key)}
+                        disabled={!role || isSaving}
+                        className="h-4 w-4 rounded border-[#D9DCE1] accent-[#1F3D33] disabled:cursor-not-allowed disabled:opacity-40"
+                      />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
+          )}
         </tbody>
       </table>
     </div>
   );
 }
+
 
 /* ============================================================
    TAB BUTTON

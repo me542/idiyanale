@@ -3,12 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import {
     X, Check, MessageSquare, Paperclip, Send,
     Bold, Italic, Underline, Strikethrough, List, Type,
-    ClipboardList,
+    ClipboardList, Repeat, Ban, Trash2, Loader2,
 } from "lucide-react";
 import { InstitutionTicket, TicketUser } from "@/services/integration/ticket/get_all_ticket_by_insti";
 import { getTicketRemarks, TicketRemark } from "@/services/integration/remark/get_ticket_remarks";
 import { postTicketRemark } from "@/services/integration/remark/post_ticket_remark";
 import { getInstitutionResolverGroups } from "@/services/integration/institution/get-insti-by-id-resolver-group";
+// NOTE: adjust this path to wherever processTicket actually lives in your
+// services folder — guessed to match the other integration/ticket imports.
+import { processTicket, TicketProcessAction } from "@/services/integration/ticket/post_ticket_process";
+import { getTicketAttachments, deleteTicketAttachment, TicketAttachment as TicketAttachmentFile } from "@/services/integration/ticket/get_ticket_attachments";
+import { post } from "@/services/api/ApiHelper";
+import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
 // ---------------------------------------------------------------------------
 // Local-user helpers — reads from localStorage set by VerifyOtp.ts at login.
@@ -105,10 +111,20 @@ interface TicketDetailPanelProps {
     onSendRemark?: (ticketId: string, message: string) => void;
     onAcceptStep?: (stepId: string) => void;
     onRejectStep?: (stepId: string) => void;
-    /** New: pause an in-progress resolver step. */
+    /** Pause an in-progress resolver step. */
     onHoldStep?: (stepId: string) => void;
-    /** New: resume a resolver step that's on hold. */
+    /** Resume a resolver step that's on hold. */
     onResumeStep?: (stepId: string) => void;
+    /** New: reassign a step (endorser or resolver) to a different user.
+     * `newUserId` is whatever the caller collected from the reassign dialog —
+     * currently a raw user id typed in, until a picker/API is wired up. */
+    onReassignStep?: (stepId: string, newUserId: number) => void;
+    /** New: submitter cancels the whole ticket. */
+    onCancelTicket?: (ticketId: string) => void;
+    /** New: fired right after a successful process/cancel action with the
+     * panel's best-effort updated ticket, so the parent can sync its own
+     * list/cache instead of relying on a manual page refresh. */
+    onTicketUpdated?: (updatedTicket: InstitutionTicket) => void;
 }
 
 const PROGRESS_STEPS = [
@@ -130,6 +146,14 @@ function fullName(user: TicketUser | null | undefined): string | undefined {
 function initials(user: TicketUser | null | undefined): string {
     if (!user) return "?";
     return `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`.toUpperCase();
+}
+
+// TicketUser as documented doesn't expose `.id` explicitly in this file's
+// imports — read it defensively the same way `resolver_status` etc. are read
+// elsewhere below, so this keeps working once the real type is confirmed.
+function userId(user: TicketUser | null | undefined): number | null {
+    const id = (user as { id?: number } | null | undefined)?.id;
+    return typeof id === "number" ? id : null;
 }
 
 function formatDate(value: string | null | undefined): string | undefined {
@@ -167,7 +191,6 @@ function getCompletedSteps(status: string): number {
         case "in progress":
         case "on hold":
             return 4;
-        case "approved":
         case "for assignment":
             return 3;
         case "endorsed":
@@ -176,6 +199,9 @@ function getCompletedSteps(status: string): number {
         case "for review":
         case "for endorsement":
             return 1;
+        case "cancel":
+        case "cancel":
+            return 0;
         default:
             return 0;
     }
@@ -199,6 +225,72 @@ function getResolverPhase(
     if (completedSteps >= 4) return "in_progress";
     // Approved but resolver hasn't accepted the assignment yet.
     return "for_review";
+}
+
+// Maps a UI action (+ resolver sub-phase, where relevant) to the backend's
+// TicketProcessAction. Returns null when there's no matching action yet —
+// callers should surface that instead of silently no-oping.
+//
+// Current TicketProcessAction enum: endorse | approve | grab | ungrab |
+// resolve | close | cancel. There is NO backend action yet for: reject on
+// the endorser/approver rows, hold, resume, or reassign — confirm the real
+// action names/endpoints for those with the backend and update this map.
+function resolveProcessAction(
+    stepId: string,
+    kind: "accept" | "reject" | "hold" | "resume" | "reassign" | "cancel",
+    phase?: ApprovalStep["resolverPhase"]
+): TicketProcessAction | null {
+    if (kind === "cancel") return "cancel";
+    if (kind === "hold") return "hold";
+    if (kind === "resume") return "resume";
+
+    if (stepId === "endorsed" && kind === "accept") return "endorse";
+    if (stepId === "approved" && kind === "accept") return "approve";
+    if (stepId === "closed" && kind === "accept") return "close";
+
+    if (stepId === "resolved") {
+        if (kind === "accept" && phase === "for_review") return "grab";
+        if (kind === "accept" && phase === "in_progress") return "resolve";
+        // Best guess: rejecting/releasing an assignment maps to "ungrab".
+        if (kind === "reject" && (phase === "for_review" || phase === "on_hold")) return "ungrab";
+    }
+
+    return null;
+}
+
+// Best-effort local patch applied right after a successful processTicket
+// call, so the UI reflects the change immediately instead of waiting for a
+// page refresh / parent refetch. If the backend response includes the
+// updated ticket in `data`, that's preferred over this guess — see the
+// confirm handler below. Field names (status strings, resolver_status) are
+// guesses consistent with the rest of this file; adjust if they don't match
+// the real model.
+function deriveOptimisticPatch(
+    action: TicketProcessAction
+): Partial<InstitutionTicket> & { resolver_status?: string } {
+    const now = new Date().toISOString();
+    switch (action) {
+        case "endorse":
+            return { status: "endorsed", endorsed_at: now };
+        case "approve":
+            return { status: "for assignment", approved_at: now };
+        case "grab":
+            return { status: "in progress", resolver_status: "in_progress" };
+        case "resolve":
+            return { status: "resolved", resolved_at: now, resolver_status: "resolved" };
+        case "ungrab":
+            return { status: "for assignment", resolver_status: "for_review" };
+        case "hold":
+            return { status: "on hold" };
+        case "resume":
+            return { status: "in progress" };
+        case "cancel":
+            return { status: "cancel" };
+        case "close":
+            return { status: "closed" };
+        default:
+            return {};
+    }
 }
 
 function approvalChainFromTicket(ticket: InstitutionTicket, completedSteps: number): ApprovalStep[] {
@@ -276,7 +368,7 @@ function approvalChainFromTicket(ticket: InstitutionTicket, completedSteps: numb
  * (just a soft pill handle) so it isn't mistaken for the activity-menu tag.
  */
 export default function TicketDetailPanel({
-    ticket,
+    ticket: ticketProp,
     isOpen,
     onClose,
     onSendRemark,
@@ -284,7 +376,28 @@ export default function TicketDetailPanel({
     onRejectStep,
     onHoldStep,
     onResumeStep,
+    onReassignStep,
+    onCancelTicket,
+    onTicketUpdated,
 }: TicketDetailPanelProps) {
+    // The panel keeps its own copy of the ticket so a successful action can
+    // update the UI immediately, instead of waiting on the parent to pass a
+    // fresh `ticket` prop (which previously meant nothing changed until a
+    // full page refresh). Everything below still reads from `ticket` — see
+    // the alias right after the sync effect.
+    const [liveTicket, setLiveTicket] = useState<InstitutionTicket | null>(ticketProp);
+
+    // Re-sync whenever the parent gives us a genuinely new ticket object —
+    // e.g. the user picked a different row, or the parent did its own
+    // refetch. If the parent just keeps passing the same stale object back,
+    // this won't clobber the optimistic update we made locally.
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLiveTicket(ticketProp);
+    }, [ticketProp]);
+
+    const ticket = liveTicket;
+
     const [showFormatBar, setShowFormatBar] = useState(false);
     const editorRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -307,6 +420,11 @@ export default function TicketDetailPanel({
     const [remarksLoading, setRemarksLoading] = useState(false);
     const remarksEndRef = useRef<HTMLDivElement>(null);
 
+    // Attachments state — fetched whenever the active ticket changes.
+    const [ticketAttachments, setTicketAttachments] = useState<TicketAttachmentFile[]>([]);
+    const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+    const [uploadingAttachments, setUploadingAttachments] = useState(false);
+
     // ---------------------------------------------------------------------------
     // Role-based permission state for approval-chain action buttons.
     // ---------------------------------------------------------------------------
@@ -315,15 +433,46 @@ export default function TicketDetailPanel({
     const [isResolverGroupMember, setIsResolverGroupMember] = useState(false);
 
     // Confirmation dialog — set to describe the pending action, null when closed.
+    // `kind: "reassign"` additionally shows a target-user-id input in the dialog.
     const [pendingAction, setPendingAction] = useState<{
         stepId: string;
-        kind: "accept" | "reject" | "hold" | "resume";
+        kind: "accept" | "reject" | "hold" | "resume" | "reassign" | "cancel";
         label: string;
         description: string;
+        // Resolver sub-phase at the time the dialog was opened — needed to
+        // pick the right TicketProcessAction (grab vs resolve vs ungrab).
+        phase?: ApprovalStep["resolverPhase"];
     } | null>(null);
+
+    // Draft value for the "reassign to" input, only relevant while the
+    // reassign dialog is open.
+    const [reassignTarget, setReassignTarget] = useState("");
+
+    // Draft value for the "resolution" textarea, only relevant while the
+    // resolve confirm dialog is open.
+    const [resolutionNote, setResolutionNote] = useState("");
+
+    // Draft value for the "cancel reason" textarea, only relevant while the
+    // cancel confirm dialog is open.
+    const [cancelReason, setCancelReason] = useState("");
+
+    // In-flight / error state for the confirm dialog's API call.
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [processError, setProcessError] = useState<string | null>(null);
 
     // Read the full local user once (it won't change while this panel is open).
     const localUser = getLocalUserFull();
+
+    // canCancel — only the person who submitted the ticket, and only while it
+    // hasn't reached a resolved/closed state.
+    // ASSUMPTION: "cancellable" = anything before Resolved/Closed on the
+    // progress bar. Adjust the completedSteps cutoff if cancellation should
+    // stop earlier (e.g. once a resolver has started work).
+    const canCancel =
+        localUser.id !== null &&
+        userId(ticket?.submitter) === localUser.id &&
+        ticket?.status?.toLowerCase().trim() !== "cancel" &&
+        (ticket ? getCompletedSteps(ticket.status) : 0) < 5;
 
     // canEndorse — the endorser is pre-assigned on the ticket; that user must
     // also have the role's can_endorse permission before they can act.
@@ -333,6 +482,12 @@ export default function TicketDetailPanel({
         localUser.id === ticket?.endorser_id &&
         localUser.permissions.can_endorse;
 
+    // canReassignEndorser — ASSUMPTION: only the submitter can redirect the
+    // ticket to a different endorser, and only while it's still awaiting
+    // that endorsement (not once it's already endorsed).
+    const canReassignEndorser =
+        localUser.id !== null && userId(ticket?.submitter) === localUser.id;
+
     // canApprove — any user whose role carries the can_approve permission.
     const canApprove = localUser.permissions.can_approve;
 
@@ -341,20 +496,26 @@ export default function TicketDetailPanel({
     const canResolve =
         isResolverGroupMember && localUser.permissions.can_resolve;
 
+    // canReassignResolver — ASSUMPTION: reassigning the resolver is an
+    // approver-level action (moving work to a different resolver group/
+    // person), not something the current resolver does to themselves.
+    const canReassignResolver = canApprove;
+
     // Fetch the resolver groups for this ticket's institution and check
     // if the logged-in user is in any active group.
     useEffect(() => {
         const institutionId = ticket?.institution_id ?? localUser.institutionId;
         if (!institutionId || localUser.id === null) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setIsResolverGroupMember(false);
             return;
         }
 
-        let cancelled = false;
+        let cancel = false;
 
         getInstitutionResolverGroups(institutionId)
             .then((res) => {
-                if (cancelled) return;
+                if (cancel) return;
                 const groups = res.response ?? [];
                 const isMember = groups.some(
                     (g) =>
@@ -364,10 +525,10 @@ export default function TicketDetailPanel({
                 setIsResolverGroupMember(isMember);
             })
             .catch(() => {
-                if (!cancelled) setIsResolverGroupMember(false);
+                if (!cancel) setIsResolverGroupMember(false);
             });
 
-        return () => { cancelled = true; };
+        return () => { cancel = true; };
     // Re-check when the ticket changes (different institution) or when the
     // panel opens for the first time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -381,22 +542,39 @@ export default function TicketDetailPanel({
     // Fetch remarks whenever the panel opens with a new ticket.
     useEffect(() => {
         if (!ticket?.ticket_id) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setRemarks([]);
             return;
         }
-        let cancelled = false;
+        let cancel = false;
         setRemarksLoading(true);
         getTicketRemarks(ticket.ticket_id)
-            .then((data) => { if (!cancelled) setRemarks(data ?? []); })
-            .catch(() => { if (!cancelled) setRemarks([]); })
-            .finally(() => { if (!cancelled) setRemarksLoading(false); });
-        return () => { cancelled = true; };
+            .then((data) => { if (!cancel) setRemarks(data ?? []); })
+            .catch(() => { if (!cancel) setRemarks([]); })
+            .finally(() => { if (!cancel) setRemarksLoading(false); });
+        return () => { cancel = true; };
     }, [ticket?.ticket_id]);
 
     // Scroll the remarks list to the bottom whenever new remarks arrive.
     useEffect(() => {
         remarksEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [remarks]);
+
+    // Fetch attachments whenever the panel opens with a new ticket.
+    useEffect(() => {
+        if (!ticket?.ticket_id) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setTicketAttachments([]);
+            return;
+        }
+        let cancel = false;
+        setAttachmentsLoading(true);
+        getTicketAttachments(ticket.ticket_id)
+            .then((data) => { if (!cancel) setTicketAttachments(data ?? []); })
+            .catch(() => { if (!cancel) setTicketAttachments([]); })
+            .finally(() => { if (!cancel) setAttachmentsLoading(false); });
+        return () => { cancel = true; };
+    }, [ticket?.ticket_id]);
 
     // Reflects the current selection's formatting state onto the toolbar
     // so active buttons (bold/italic/etc.) show as "on".
@@ -434,6 +612,63 @@ export default function TicketDetailPanel({
         setAttachments((prev) => prev.filter((_, i) => i !== index));
     }
 
+    // Toast state — shows brief success/error feedback.
+    const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    function showToast(message: string, type: "success" | "error" = "success") {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setToast({ message, type });
+        toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+    }
+
+    // Upload pending attachments to the existing ticket.
+    const handleUploadAttachments = async () => {
+        if (!ticket || attachments.length === 0) return;
+
+        setUploadingAttachments(true);
+        try {
+            const formData = new FormData();
+            for (const file of attachments) {
+                formData.append("file", file);
+            }
+
+            await post(
+                ApiEndpoint.POST_TICKET_ATTACHMENTS(ticket.ticket_id),
+                formData,
+                { headers: {} } // Let browser set Content-Type for FormData
+            );
+
+            // Refresh the attachment list after upload.
+            const updated = await getTicketAttachments(ticket.ticket_id);
+            setTicketAttachments(updated ?? []);
+            setAttachments([]);
+            showToast("Attachments uploaded successfully");
+        } catch {
+            showToast("Failed to upload attachments", "error");
+        }
+        setUploadingAttachments(false);
+    };
+
+    // Delete an existing attachment.
+    const handleDeleteAttachment = async (attachmentId: number) => {
+        if (!ticket) return;
+
+        try {
+            await deleteTicketAttachment(ticket.ticket_id, attachmentId);
+            setTicketAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+            showToast("Attachment deleted");
+        } catch {
+            showToast("Failed to delete attachment", "error");
+        }
+    };
+
+    // Close ticket — only the submitter can close a resolved ticket.
+    const canClose =
+        localUser.id !== null &&
+        userId(ticket?.submitter) === localUser.id &&
+        ticket?.status?.toLowerCase().trim() === "resolved";
+
     const handleSend = async () => {
         const text = editorRef.current?.innerText?.trim() ?? "";
         if ((!text && attachments.length === 0) || !ticket) return;
@@ -451,7 +686,7 @@ export default function TicketDetailPanel({
         });
 
         try {
-            await postTicketRemark(text);
+            await postTicketRemark(ticket.ticket_id, text);
             // Refresh the remarks list after a successful post.
             const updated = await getTicketRemarks(ticket.ticket_id);
             setRemarks(updated ?? []);
@@ -495,6 +730,35 @@ export default function TicketDetailPanel({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [isOpen, onClose, pendingAction]);
 
+    // Reset the reassign-target, resolution-note, and cancel-reason drafts whenever the dialog closes/opens.
+    useEffect(() => {
+        if (!pendingAction || pendingAction.kind !== "reassign") {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setReassignTarget("");
+        }
+        // Reset resolution note unless the dialog is showing a resolve action
+        // (kind=accept with phase=in_progress on the resolver step).
+        const isResolveDialog =
+            pendingAction?.kind === "accept" &&
+            pendingAction?.phase === "in_progress" &&
+            pendingAction?.stepId === "resolved";
+        if (!isResolveDialog) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setResolutionNote("");
+        }
+        if (!pendingAction || pendingAction.kind !== "cancel") {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setCancelReason("");
+        }
+    }, [pendingAction]);
+
+    // Clear any stale error/processing state whenever a new dialog opens.
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setProcessError(null);
+        setIsProcessing(false);
+    }, [pendingAction?.stepId, pendingAction?.kind]);
+
     // Nothing to show yet and the panel isn't open — don't render anything.
     if (!ticket && !isOpen) return null;
 
@@ -503,6 +767,11 @@ export default function TicketDetailPanel({
     const approvalChain = ticket ? approvalChainFromTicket(ticket, completedSteps) : [];
 
     // NOTE: InstitutionTicket has no remarks/attachment fields yet.
+
+    const isConfirmDisabled =
+        (pendingAction?.kind === "reassign" && reassignTarget.trim() === "") ||
+        (pendingAction?.kind === "accept" && pendingAction?.phase === "in_progress" && resolutionNote.trim() === "") ||
+        (pendingAction?.kind === "cancel" && cancelReason.trim() === "");
 
     return (
         <>
@@ -536,11 +805,49 @@ export default function TicketDetailPanel({
                         Select a ticket to view its details.
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-y-auto p-6">
+                    <div className="flex-1 overflow-y-auto p-5">
                         <div className="grid grid-cols-2 gap-6 items-start">
                             {/* Left column: ticket fields */}
                             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 flex flex-col gap-2">
-                                <h2 className="font-bold text-lg text-[#1E4637] mb-2">{ticketId}</h2>
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                    <h2 className="font-bold text-lg text-[#1E4637]">{ticketId}</h2>
+
+                                    {/* Submitter: close a resolved ticket */}
+                                    {canClose && (
+                                        <button
+                                            type="button"
+                                            aria-label="Close ticket"
+                                            onClick={() => setPendingAction({
+                                                stepId: "closed",
+                                                kind: "accept",
+                                                label: "Close Ticket",
+                                                description: "Are you sure you want to close this ticket? This confirms the resolution is satisfactory.",
+                                            })}
+                                            className="flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 text-xs font-bold px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0"
+                                        >
+                                            <Check size={12} />
+                                            CLOSE TICKET
+                                        </button>
+                                    )}
+
+                                    {/* Submitter: cancel the whole ticket */}
+                                    {canCancel && (
+                                        <button
+                                            type="button"
+                                            aria-label="Cancel ticket"
+                                            onClick={() => setPendingAction({
+                                                stepId: "submitted",
+                                                kind: "cancel",
+                                                label: "Cancel Ticket",
+                                                description: "Are you sure you want to cancel this ticket? This cannot be undone.",
+                                            })}
+                                            className="flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0"
+                                        >
+                                            <Ban size={12} />
+                                            CANCEL TICKET
+                                        </button>
+                                    )}
+                                </div>
 
                                 <Field label="Resolver Pool" value={String(ticket.institution_pool ?? "")} />
                                 <Field label="Ticket Type" value={ticket.ticket_type?.ticket_type_name} />
@@ -566,16 +873,77 @@ export default function TicketDetailPanel({
 
                                 <Field label="Date Needed" value={formatDate(ticket.due_date)} />
 
-                                {/* InstitutionTicket has no attachment field yet */}
-                                <div className="border border-dashed border-gray-200 rounded-xl p-6 text-center text-gray-400 text-sm mt-2">
-                                    No file attached
+                                {/* Attachments */}
+                                <div className="border border-gray-200 rounded-xl p-4 mt-2">
+                                    <div className="text-sm text-gray-400 font-semibold mb-2">Attachments</div>
+                                    {attachmentsLoading ? (
+                                        <div className="text-xs text-gray-400 text-center py-2">Loading…</div>
+                                    ) : ticketAttachments.length === 0 && attachments.length === 0 ? (
+                                        <div className="text-xs text-gray-400 text-center py-2">No files attached</div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {/* Existing attachments from the server */}
+                                            {ticketAttachments.map((a) => (
+                                                <div key={a.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                                                    <Paperclip size={12} className="text-gray-400 shrink-0" />
+                                                    <span className="text-xs text-gray-700 truncate flex-1">{a.file_name}</span>
+                                                    {a.download_url && (
+                                                        <a
+                                                            href={a.download_url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-xs text-[#1E4637] font-semibold hover:underline shrink-0"
+                                                        >
+                                                            Download
+                                                        </a>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        aria-label="Delete attachment"
+                                                        onClick={() => handleDeleteAttachment(a.id)}
+                                                        className="text-gray-300 hover:text-rose-500 transition-colors shrink-0"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
+                                            ))}
+
+                                            {/* Pending attachments (not yet uploaded) */}
+                                            {attachments.map((file, i) => (
+                                                <div key={`pending-${i}`} className="flex items-center gap-2 bg-amber-50 rounded-lg px-3 py-2">
+                                                    <Paperclip size={12} className="text-amber-400 shrink-0" />
+                                                    <span className="text-xs text-gray-700 truncate flex-1">{file.name}</span>
+                                                    <span className="text-[10px] text-amber-500 shrink-0">Pending</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeAttachment(i)}
+                                                        className="text-gray-300 hover:text-gray-500 shrink-0"
+                                                    >
+                                                        <X size={10} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Upload button for pending attachments */}
+                                    {attachments.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={handleUploadAttachments}
+                                            disabled={uploadingAttachments}
+                                            className="mt-2 w-full text-xs font-semibold text-white bg-[#1E4637] hover:bg-[#16352a] rounded-lg px-3 py-2 transition-colors disabled:opacity-40"
+                                        >
+                                            {uploadingAttachments ? "Uploading…" : `Upload ${attachments.length} file(s)`}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Right column: progress, approval chain, remarks */}
-                            <div className="flex flex-col gap-6">
-                                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-                                    <h3 className="font-bold text-lg text-[#1E4637] mb-8">
+                            <div className="flex flex-col gap-4">
+                                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                                    <h3 className="font-bold text-lg text-[#1E4637] mb-4">
                                         Ticket Progress
                                     </h3>
 
@@ -628,7 +996,7 @@ export default function TicketDetailPanel({
                                     </div>
                                 </div>
 
-                                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+                                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
                                     <h3 className="font-bold text-[#1E4637] mb-4">Approval Chain</h3>
                                     {approvalChain.length === 0 ? (
                                         <div className="text-sm text-gray-400 text-center py-4">
@@ -638,6 +1006,7 @@ export default function TicketDetailPanel({
                                         <div className="flex flex-col">
                                             {approvalChain.map((step, i) => {
                                                 const isResolverRow = step.id === "resolved";
+                                                const isEndorserRow = step.id === "endorsed";
                                                 const phase = step.resolverPhase;
 
                                                 // Live elapsed label for the in-progress resolver row.
@@ -648,6 +1017,7 @@ export default function TicketDetailPanel({
                                                         ? `In Progress: ${
                                                               (ticket as { resolver_started_at?: string }).resolver_started_at
                                                                   ? formatElapsed(
+                                                                        // eslint-disable-next-line react-hooks/purity
                                                                         Date.now() -
                                                                             new Date(
                                                                                 (ticket as { resolver_started_at?: string }).resolver_started_at!
@@ -656,6 +1026,13 @@ export default function TicketDetailPanel({
                                                                   : formatElapsed(elapsedTick * 1000)
                                                           }`
                                                         : undefined;
+
+                                                // Resolver row can show a REASSIGN button alongside
+                                                // whichever phase-specific buttons are already visible.
+                                                const showResolverReassign =
+                                                    isResolverRow &&
+                                                    (phase === "for_review" || phase === "in_progress" || phase === "on_hold") &&
+                                                    canReassignResolver;
 
                                                 return (
                                                     <div
@@ -702,176 +1079,222 @@ export default function TicketDetailPanel({
                                                             </div>
                                                         </div>
 
-                                                        {/* ── Resolver row: for_review ── only group members can grab it */}
-                                                        {isResolverRow && phase === "for_review" && canResolve && (
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label="Accept assignment"
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "accept",
-                                                                        label: "Accept Assignment",
-                                                                        description: "Are you sure you want to accept this ticket assignment?",
-                                                                    })}
-                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    ACCEPT
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label="Reject assignment"
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "reject",
-                                                                        label: "Reject Assignment",
-                                                                        description: "Are you sure you want to reject this ticket assignment? The ticket will return to the pool.",
-                                                                    })}
-                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    REJECT
-                                                                </button>
-                                                            </div>
-                                                        )}
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            {/* ── Resolver row: for_review ── only group members can grab it */}
+                                                            {isResolverRow && phase === "for_review" && canResolve && (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Accept assignment"
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "accept",
+                                                                            label: "Accept Assignment",
+                                                                            description: "Are you sure you want to accept this ticket assignment?",
+                                                                            phase,
+                                                                        })}
+                                                                        className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        ACCEPT
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Reject assignment"
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "reject",
+                                                                            label: "Reject Assignment",
+                                                                            description: "Are you sure you want to reject this ticket assignment? The ticket will return to the pool.",
+                                                                            phase,
+                                                                        })}
+                                                                        className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        REJECT
+                                                                    </button>
+                                                                </>
+                                                            )}
 
-                                                        {/* ── Resolver row: in_progress ── only the assigned resolver (group member) */}
-                                                        {isResolverRow && phase === "in_progress" && canResolve && (
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label={`Mark ${step.name} resolved`}
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "accept",
-                                                                        label: "Mark as Resolved",
-                                                                        description: "Are you sure you want to mark this ticket as resolved?",
-                                                                    })}
-                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    RESOLVED
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label={`Put ${step.name} on hold`}
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "hold",
-                                                                        label: "Put on Hold",
-                                                                        description: "Are you sure you want to put this ticket on hold?",
-                                                                    })}
-                                                                    className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    HOLD
-                                                                </button>
-                                                            </div>
-                                                        )}
+                                                            {/* ── Resolver row: in_progress ── only the assigned resolver (group member) */}
+                                                            {isResolverRow && phase === "in_progress" && canResolve && (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Mark ${step.name} resolved`}
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "accept",
+                                                                            label: "Mark as Resolved",
+                                                                            description: "Are you sure you want to mark this ticket as resolved?",
+                                                                            phase,
+                                                                        })}
+                                                                        className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        RESOLVED
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Put ${step.name} on hold`}
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "hold",
+                                                                            label: "Put on Hold",
+                                                                            description: "Are you sure you want to put this ticket on hold?",
+                                                                            phase,
+                                                                        })}
+                                                                        className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        HOLD
+                                                                    </button>
+                                                                </>
+                                                            )}
 
-                                                        {/* ── Resolver row: on_hold ── only the assigned resolver (group member) */}
-                                                        {isResolverRow && phase === "on_hold" && canResolve && (
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label={`Reject ${step.name}`}
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "reject",
-                                                                        label: "Reject Ticket",
-                                                                        description: "Are you sure you want to reject this ticket? It will return to the pool.",
-                                                                    })}
-                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    REJECT
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label={`Resume ${step.name}`}
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "resume",
-                                                                        label: "Resume Ticket",
-                                                                        description: "Are you sure you want to resume work on this ticket?",
-                                                                    })}
-                                                                    className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    RESUME
-                                                                </button>
-                                                            </div>
-                                                        )}
+                                                            {/* ── Resolver row: on_hold ── only the assigned resolver (group member) */}
+                                                            {isResolverRow && phase === "on_hold" && canResolve && (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Reject ${step.name}`}
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "reject",
+                                                                            label: "Reject Ticket",
+                                                                            description: "Are you sure you want to reject this ticket? It will return to the pool.",
+                                                                            phase,
+                                                                        })}
+                                                                        className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        REJECT
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Resume ${step.name}`}
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "resume",
+                                                                            label: "Resume Ticket",
+                                                                            description: "Are you sure you want to resume work on this ticket?",
+                                                                            phase,
+                                                                        })}
+                                                                        className="bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        RESUME
+                                                                    </button>
+                                                                </>
+                                                            )}
 
-                                                        {/* ── Endorser row ── only the assigned endorser can act */}
-                                                        {!isResolverRow && step.id === "endorsed" && step.pending && canEndorse && (
-                                                            <div className="flex items-center gap-2 shrink-0">
+                                                            {/* ── Resolver row: REASSIGN ── approver-level action, available
+                                                                 whenever the resolver step is still open (any phase but resolved) */}
+                                                            {showResolverReassign && (
                                                                 <button
                                                                     type="button"
-                                                                    aria-label="Accept endorsement"
+                                                                    aria-label="Reassign resolver"
                                                                     onClick={() => setPendingAction({
                                                                         stepId: step.id,
-                                                                        kind: "accept",
-                                                                        label: "Accept Endorsement",
-                                                                        description: "Are you sure you want to endorse this ticket?",
+                                                                        kind: "reassign",
+                                                                        label: "Reassign Resolver",
+                                                                        description: "Enter the user ID to reassign this ticket's resolver to.",
                                                                     })}
-                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
                                                                 >
-                                                                    ACCEPT
+                                                                    <Repeat size={12} />
+                                                                    REASSIGN
                                                                 </button>
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label="Reject endorsement"
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "reject",
-                                                                        label: "Reject Endorsement",
-                                                                        description: "Are you sure you want to reject this endorsement? The ticket will be sent back.",
-                                                                    })}
-                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    REJECT
-                                                                </button>
-                                                            </div>
-                                                        )}
+                                                            )}
 
-                                                        {/* ── Approver row ── only users with can_approve permission */}
-                                                        {!isResolverRow && step.id === "approved" && step.pending && canApprove && (
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label="Accept approval"
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "accept",
-                                                                        label: "Approve Ticket",
-                                                                        description: "Are you sure you want to approve this ticket?",
-                                                                    })}
-                                                                    className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    ACCEPT
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    aria-label="Reject approval"
-                                                                    onClick={() => setPendingAction({
-                                                                        stepId: step.id,
-                                                                        kind: "reject",
-                                                                        label: "Reject Approval",
-                                                                        description: "Are you sure you want to reject this ticket? The ticket will be sent back.",
-                                                                    })}
-                                                                    className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
-                                                                >
-                                                                    REJECT
-                                                                </button>
-                                                            </div>
-                                                        )}
+                                                            {/* ── Endorser row ── only the assigned endorser can accept/reject */}
+                                                            {isEndorserRow && step.pending && canEndorse && (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Accept endorsement"
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "accept",
+                                                                            label: "Accept Endorsement",
+                                                                            description: "Are you sure you want to endorse this ticket?",
+                                                                        })}
+                                                                        className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        ACCEPT
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Reject endorsement"
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "reject",
+                                                                            label: "Reject Endorsement",
+                                                                            description: "Are you sure you want to reject this endorsement? The ticket will be sent back.",
+                                                                        })}
+                                                                        className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        REJECT
+                                                                    </button>
+                                                                </>
+                                                            )}
 
-                                                        {(!step.pending && phase !== "in_progress" && phase !== "on_hold" && phase !== "for_review") && (
-                                                            <span
-                                                                className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap text-white bg-emerald-400 shrink-0"
-                                                            >
-                                                                {step.status}
-                                                                {step.duration && (
-                                                                    <span className="text-emerald-100 ml-1">{step.duration}</span>
-                                                                )}
-                                                            </span>
-                                                        )}
+                                                            {/* ── Endorser row: REASSIGN ── only the submitter, only while
+                                                                 the endorser hasn't acted yet */}
+                                                            {isEndorserRow && step.pending && canReassignEndorser && (
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Reassign endorser"
+                                                                    onClick={() => setPendingAction({
+                                                                        stepId: step.id,
+                                                                        kind: "reassign",
+                                                                        label: "Reassign Endorser",
+                                                                        description: "Enter the user ID to reassign this ticket's endorser to.",
+                                                                    })}
+                                                                    className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                >
+                                                                    <Repeat size={12} />
+                                                                    REASSIGN
+                                                                </button>
+                                                            )}
+
+                                                            {/* ── Approver row ── accept/reject only, no reassign */}
+                                                            {!isResolverRow && step.id === "approved" && step.pending && canApprove && (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Accept approval"
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "accept",
+                                                                            label: "Approve Ticket",
+                                                                            description: "Are you sure you want to approve this ticket?",
+                                                                        })}
+                                                                        className="bg-emerald-400 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        ACCEPT
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Reject approval"
+                                                                        onClick={() => setPendingAction({
+                                                                            stepId: step.id,
+                                                                            kind: "reject",
+                                                                            label: "Reject Approval",
+                                                                            description: "Are you sure you want to reject this ticket? The ticket will be sent back.",
+                                                                        })}
+                                                                        className="bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        REJECT
+                                                                    </button>
+                                                                </>
+                                                            )}
+
+                                                            {(!step.pending && phase !== "in_progress" && phase !== "on_hold" && phase !== "for_review") && (
+                                                                <span
+                                                                    className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap text-white bg-emerald-400 shrink-0"
+                                                                >
+                                                                    {step.status}
+                                                                    {step.duration && (
+                                                                        <span className="text-emerald-100 ml-1">{step.duration}</span>
+                                                                    )}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
@@ -879,7 +1302,7 @@ export default function TicketDetailPanel({
                                     )}
                                 </div>
 
-                                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 flex flex-col h-80">
+                                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 flex flex-col min-h-64">
                                     <div className="flex items-center gap-2 pb-3 mb-3 border-b border-gray-100 shrink-0">
                                         <MessageSquare size={16} className="text-gray-500" />
                                         <h3 className="font-bold text-[#1E4637]">Remarks</h3>
@@ -895,27 +1318,21 @@ export default function TicketDetailPanel({
                                                 No remarks yet.
                                             </div>
                                         ) : (
-                                            remarks.map((r) => {
-                                                const { label: authorName, initials: authorInitials } = getLocalUser();
-                                                return (
-                                                    <div key={r.id} className="flex items-end justify-end gap-3">
-                                                        <div className="flex flex-col items-end max-w-[75%]">
-                                                            <div className="text-sm font-bold text-[#1E4637] mb-1">
-                                                                {authorName}
-                                                            </div>
-                                                            <div className="bg-gray-100 rounded-2xl px-4 py-3 text-sm text-gray-700 w-full min-h-[3.25rem]">
-                                                                {r.reason}
-                                                            </div>
-                                                            <div className="text-[10px] text-gray-400 mt-1">
-                                                                {formatDate(r.created_at)}
-                                                            </div>
+                                            remarks.map((r) => (
+                                                <div key={r.remark_id} className="flex items-end justify-end gap-3">
+                                                    <div className="flex flex-col items-end max-w-[75%]">
+                                                        <div className="text-sm font-bold text-[#1E4637] mb-1">
+                                                            {r.remark_type === "resolution" ? "Resolution" : "Remark"}
                                                         </div>
-                                                        <div className="w-5 h-5 rounded-full bg-[#1E4637] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                                                            {authorInitials}
+                                                        <div className="bg-gray-100 rounded-2xl px-4 py-3 text-sm text-gray-700 w-full min-h-[3.25rem]">
+                                                            {r.message}
+                                                        </div>
+                                                        <div className="text-[10px] text-gray-400 mt-1">
+                                                            {formatDate(r.created_at)}
                                                         </div>
                                                     </div>
-                                                );
-                                            })
+                                                </div>
+                                            ))
                                         )}
                                         <div ref={remarksEndRef} />
                                     </div>
@@ -1041,6 +1458,8 @@ export default function TicketDetailPanel({
                                 ? "bg-emerald-100"
                                 : pendingAction.kind === "hold"
                                 ? "bg-amber-100"
+                                : pendingAction.kind === "reassign"
+                                ? "bg-gray-100"
                                 : "bg-rose-100"
                         }`}>
                             {(pendingAction.kind === "accept" || pendingAction.kind === "resume") && (
@@ -1049,7 +1468,10 @@ export default function TicketDetailPanel({
                             {pendingAction.kind === "hold" && (
                                 <span className="text-amber-600 font-bold text-sm">||</span>
                             )}
-                            {pendingAction.kind === "reject" && (
+                            {pendingAction.kind === "reassign" && (
+                                <Repeat size={18} className="text-gray-600" strokeWidth={2.5} />
+                            )}
+                            {(pendingAction.kind === "reject" || pendingAction.kind === "cancel") && (
                                 <X size={20} className="text-rose-600" strokeWidth={2.5} />
                             )}
                         </div>
@@ -1061,36 +1483,179 @@ export default function TicketDetailPanel({
                             {pendingAction.description}
                         </p>
 
+                        {/* Resolution note — required by the backend for the "resolve" action */}
+                        {pendingAction.kind === "accept" && pendingAction.phase === "in_progress" && (
+                            <textarea
+                                autoFocus
+                                value={resolutionNote}
+                                onChange={(e) => setResolutionNote(e.target.value)}
+                                placeholder="Resolution note (required)"
+                                rows={3}
+                                className="w-full mb-5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#1E4637] resize-none"
+                            />
+                        )}
+
+                        {/* Cancellation reason — required by the backend for the "cancel" action */}
+                        {pendingAction.kind === "cancel" && (
+                            <textarea
+                                autoFocus
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                                placeholder="Cancellation reason (required)"
+                                rows={3}
+                                className="w-full mb-5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#1E4637] resize-none"
+                            />
+                        )}
+
+                        {/* Reassign target picker — a plain user-id field until a
+                            real "list endorsers/approvers" endpoint is wired in. */}
+                        {pendingAction.kind === "reassign" && (
+                            <input
+                                type="number"
+                                inputMode="numeric"
+                                autoFocus
+                                value={reassignTarget}
+                                onChange={(e) => setReassignTarget(e.target.value)}
+                                placeholder="User ID to reassign to"
+                                className="w-full mb-5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#1E4637]"
+                            />
+                        )}
+
+                        {/* Surface API failures (and unmapped actions) instead of
+                            closing the dialog as if nothing happened. */}
+                        {processError && (
+                            <p className="text-xs text-rose-500 mb-3">{processError}</p>
+                        )}
+
                         <div className="flex justify-end gap-2">
                             <button
                                 type="button"
+                                disabled={isProcessing}
                                 onClick={() => setPendingAction(null)}
-                                className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                                className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="button"
-                                onClick={() => {
-                                    const { stepId, kind } = pendingAction;
+                                disabled={isConfirmDisabled || isProcessing}
+                                onClick={async () => {
+                                    if (!ticket) return;
+                                    const { stepId, kind, phase } = pendingAction;
+                                    const targetId = Number(reassignTarget);
+
+                                    // Reassign has no backend action yet (needs its own
+                                    // endpoint, not processTicket) — say so instead of
+                                    // pretending it worked.
+                                    if (kind === "reassign") {
+                                        if (!Number.isFinite(targetId)) return;
+                                        setProcessError("Reassign isn't wired to a backend endpoint yet.");
+                                        return;
+                                        // Once an endpoint exists:
+                                        // onReassignStep?.(stepId, targetId);
+                                        // setPendingAction(null);
+                                    }
+
+                                    const action = resolveProcessAction(stepId, kind, phase);
+                                    if (!action) {
+                                        setProcessError(`"${pendingAction.label}" has no matching backend action yet.`);
+                                        return;
+                                    }
+
+                                    // Build the request payload with action-specific fields.
+                                    const payload: { action: typeof action; reason?: string; resolution?: string } = { action };
+
+                                    // The backend requires a resolution note for the "resolve" action.
+                                    if (action === "resolve") {
+                                        const note = resolutionNote.trim();
+                                        if (!note) {
+                                            setProcessError("Resolution note is required.");
+                                            return;
+                                        }
+                                        payload.resolution = note;
+                                    }
+
+                                    // The backend requires a reason for "cancel" and "reject" (ungrab).
+                                    if (kind === "cancel") {
+                                        const reason = cancelReason.trim();
+                                        if (!reason) {
+                                            setProcessError("Cancellation reason is required.");
+                                            return;
+                                        }
+                                        payload.reason = reason;
+                                    } else if (kind === "reject") {
+                                        payload.reason = "Rejected via ticket detail panel";
+                                    }
+
+                                    setIsProcessing(true);
+                                    setProcessError(null);
+                                    let response;
+                                    try {
+                                        response = await processTicket(ticket.ticket_id, payload);
+                                    } catch (err) {
+                                        console.error("processTicket failed", err);
+                                        setIsProcessing(false);
+                                        setProcessError("Something went wrong sending that action. Please try again.");
+                                        return;
+                                    }
+                                    setIsProcessing(false);
                                     setPendingAction(null);
+
+                                    // Prefer whatever the backend actually returned; fall
+                                    // back to a best-effort local guess so the UI still
+                                    // moves without a page refresh either way.
+                                    // The backend wraps data in the "response" field of JSONResponseWithDataV1.
+                                    const serverTicket =
+                                        response?.response && typeof response.response === "object"
+                                            ? (response.response as Partial<InstitutionTicket>)
+                                            : null;
+                                    const patch = serverTicket ?? deriveOptimisticPatch(action);
+
+                                    setLiveTicket((prev) =>
+                                        prev ? ({ ...prev, ...patch } as InstitutionTicket) : prev
+                                    );
+                                    onTicketUpdated?.({ ...ticket, ...patch } as InstitutionTicket);
+
+                                    // Keep firing the existing callbacks so the parent can
+                                    // refresh its ticket list/local state as before.
                                     if (kind === "accept") onAcceptStep?.(stepId);
                                     else if (kind === "reject") onRejectStep?.(stepId);
                                     else if (kind === "hold") onHoldStep?.(stepId);
                                     else if (kind === "resume") onResumeStep?.(stepId);
+                                    else if (kind === "cancel") onCancelTicket?.(ticket.ticket_id);
                                 }}
-                                className={`rounded-lg px-4 py-2 text-xs font-bold text-white transition-colors ${
+                                className={`rounded-lg px-4 py-2 text-xs font-bold text-white transition-colors disabled:opacity-40 ${
                                     pendingAction.kind === "accept" || pendingAction.kind === "resume"
                                         ? "bg-emerald-500 hover:bg-emerald-600"
                                         : pendingAction.kind === "hold"
                                         ? "bg-amber-500 hover:bg-amber-600"
+                                        : pendingAction.kind === "reassign"
+                                        ? "bg-[#1E4637] hover:bg-[#16352a]"
                                         : "bg-rose-500 hover:bg-rose-600"
                                 }`}
                             >
-                                Confirm
+                                {isProcessing ? (
+                                    <span className="flex items-center gap-1.5">
+                                        <Loader2 size={12} className="animate-spin" />
+                                        Sending…
+                                    </span>
+                                ) : "Confirm"}
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Toast notification */}
+            {toast && (
+                <div
+                    className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold transition-all duration-300 ${
+                        toast.type === "error"
+                            ? "bg-rose-500 text-white"
+                            : "bg-[#1E4637] text-white"
+                    }`}
+                >
+                    {toast.message}
                 </div>
             )}
         </>

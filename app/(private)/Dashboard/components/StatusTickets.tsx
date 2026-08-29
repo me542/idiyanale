@@ -6,6 +6,7 @@ import {
   getAllTicketsByInstitution,
   InstitutionTicket,
 } from "@/services/integration/ticket/get_all_ticket_by_insti";
+import { verifyJWT } from "@/lib/auth/verify-jwt";
 import { StatusCounts } from "./types";
 import {
   StatusBucket,
@@ -16,19 +17,27 @@ import {
 
 const DEFAULT: StatusCounts = {
   total: 0,
+  myTicket: 0,
   forReview: 0,
   inProgress: 0,
   resolved: 0,
   closed: 0,
-  cancelled: 0,
+  cancel: 0,
 };
 
-function getStatusCounts(tickets: InstitutionTicket[]): StatusCounts {
+function getStatusCounts(
+  tickets: InstitutionTicket[],
+  currentUserId: number | null
+): StatusCounts {
   const counts: StatusCounts = { ...DEFAULT, total: tickets.length };
 
   for (const ticket of tickets) {
     const bucket = getStatusBucket(ticket.status);
     if (bucket) counts[bucket] += 1;
+
+    if (currentUserId !== null && ticket.submitter?.id === currentUserId) {
+      counts.myTicket += 1;
+    }
   }
 
   return counts;
@@ -46,7 +55,7 @@ export default function StatusTickets() {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     async function loadTickets() {
       try {
@@ -58,23 +67,30 @@ export default function StatusTickets() {
           throw new Error("Invalid institution ID.");
         }
 
-        const tickets = await getAllTicketsByInstitution(institutionId);
-        if (cancelled) return;
+        // Resolve the current user's id from their JWT so we can compute
+        // the "My Ticket" count (tickets they submitted).
+        const token =
+          localStorage.getItem("token");
+        const payload = token ? await verifyJWT(token) : null;
+        const currentUserId = payload?.id ?? null;
 
-        setData(getStatusCounts(tickets));
+        const tickets = await getAllTicketsByInstitution(institutionId);
+        if (cancel) return;
+
+        setData(getStatusCounts(tickets, currentUserId));
       } catch (err) {
-        if (!cancelled) {
+        if (!cancel) {
           console.error("Failed to load institution tickets:", err);
           setData(DEFAULT);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancel) setLoading(false);
       }
     }
 
     loadTickets();
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, []);
 
@@ -99,22 +115,28 @@ export default function StatusTickets() {
     router.push(`${TICKETS_PAGE_PATH}?status=forReview&stage=${stage}`);
   }
 
+  function goToMine() {
+    router.push(`${TICKETS_PAGE_PATH}?mine=true`);
+  }
+
   const items: {
     label: string;
     value: number;
     color: string;
     bucket: StatusBucket | null; // null = "Total", no filter
+    mine?: boolean; // true = "My Ticket", filters by current user's submitted tickets
   }[] = [
     { label: "Total Ticket", value: data.total, color: "#4E86F0", bucket: null },
+    { label: "My Ticket", value: data.myTicket, color: "#F97316", bucket: null, mine: true },
     { label: "For Review", value: data.forReview, color: "#F0B429", bucket: "forReview" },
     { label: "In Progress", value: data.inProgress, color: "#8B6BF0", bucket: "inProgress" },
     { label: "Resolved", value: data.resolved, color: "#2FBF87", bucket: "resolved" },
     { label: "Closed", value: data.closed, color: "#8C97A0", bucket: "closed" },
-    { label: "Cancelled", value: data.cancelled, color: "#E85C5C", bucket: "cancelled" },
+    { label: "cancel", value: data.cancel, color: "#E85C5C", bucket: "cancel" },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-7 gap-4 mb-6">
       {items.map((item) => {
         const isForReview = item.bucket === "forReview";
 
@@ -123,7 +145,9 @@ export default function StatusTickets() {
             <button
               type="button"
               onClick={() => {
-                if (item.bucket === null) {
+                if (item.mine) {
+                  goToMine();
+                } else if (item.bucket === null) {
                   router.push(TICKETS_PAGE_PATH);
                 } else if (isForReview) {
                   setStageMenuOpen((open) => !open);

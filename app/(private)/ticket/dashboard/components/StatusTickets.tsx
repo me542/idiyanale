@@ -20,7 +20,7 @@ const DEFAULT: StatusCounts = {
   inProgress: 0,
   resolved: 0,
   closed: 0,
-  cancelled: 0,
+  cancel: 0,
 };
 
 function getStatusCounts(tickets: InstitutionTicket[]): StatusCounts {
@@ -46,7 +46,7 @@ export default function StatusTickets() {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     async function loadTickets() {
       try {
@@ -59,22 +59,22 @@ export default function StatusTickets() {
         }
 
         const tickets = await getAllTicketsByInstitution(institutionId);
-        if (cancelled) return;
+        if (cancel) return;
 
         setData(getStatusCounts(tickets));
       } catch (err) {
-        if (!cancelled) {
+        if (!cancel) {
           console.error("Failed to load institution tickets:", err);
           setData(DEFAULT);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancel) setLoading(false);
       }
     }
 
     loadTickets();
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, []);
 
@@ -110,7 +110,7 @@ export default function StatusTickets() {
     { label: "In Progress", value: data.inProgress, color: "#8B6BF0", bucket: "inProgress" },
     { label: "Resolved", value: data.resolved, color: "#2FBF87", bucket: "resolved" },
     { label: "Closed", value: data.closed, color: "#8C97A0", bucket: "closed" },
-    { label: "Cancelled", value: data.cancelled, color: "#E85C5C", bucket: "cancelled" },
+    { label: "cancel", value: data.cancel, color: "#E85C5C", bucket: "cancel" },
   ];
 
   return (

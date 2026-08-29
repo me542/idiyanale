@@ -11,7 +11,7 @@ export const lightTheme = {
   in_progress: "#A78BFA",
   resolved: "#34D399",
   closed: "#9CA3AF",
-  cancelled: "#FFA1A1",
+  cancel: "#FFA1A1",
   
   // Ticket Type Colors
   service_request: "#52D1A2",
@@ -33,7 +33,7 @@ export const darkTheme = {
   in_progress: "#FBBF24",
   resolved: "#34D399",
   closed: "#6B7280",
-  cancelled: "#F87171",
+  cancel: "#F87171",
 
   // Ticket Type Colors
   service_request: "#34D399",

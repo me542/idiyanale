@@ -69,9 +69,9 @@ export interface InstitutionTicket {
   created_at: string;
   updated_at: string;
 
-  cancelled_by: number | null;
+  cancel_by: number | null;
   canceller: TicketUser | null;
-  cancelled_at: string | null;
+  cancel_at: string | null;
 
   started_at: string | null;
   resolved_at: string | null;

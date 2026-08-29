@@ -396,7 +396,7 @@ function VerificationPage({
       const token = res.token;
 
       // Client-side storage for use in fetch/axios headers, etc.
-      localStorage.setItem("access_token", token);
+      localStorage.setItem("token", token);
 
       // RootPage (app/page.tsx) and middleware.ts read a "token" cookie
       // via next/headers' cookies() / request.cookies — NOT localStorage —

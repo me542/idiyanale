@@ -31,7 +31,7 @@ export function useCategoryStats(
       return;
     }
 
-    let cancelled = false;
+    let cancel = false;
 
     (async () => {
       setLoading(true);
@@ -61,23 +61,23 @@ export function useCategoryStats(
             color: PALETTE[i % PALETTE.length],
           }));
 
-        if (!cancelled) {
+        if (!cancel) {
           setCategories(items);
           setTotal(totalCount);
         }
       } catch (e) {
-        if (!cancelled) {
+        if (!cancel) {
           setError(e instanceof Error ? e.message : "Failed to load categories");
         }
       } finally {
-        if (!cancelled) {
+        if (!cancel) {
           setLoading(false);
         }
       }
     })();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, [institutionId]);
 

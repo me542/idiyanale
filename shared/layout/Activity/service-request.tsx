@@ -22,6 +22,9 @@ import { getInstitutions, InstitutionResp } from "@/services/integration/institu
 import { getTicketTypes, TicketTypeResp } from "@/services/integration/insti-admin/get_all_ticket_type"; // adjust path to match your project
 import { verifyJWT } from "@/lib/auth/verify-jwt"; // adjust path to match your project
 
+// New: project lookup API
+import { getProjectByID, ProjectResponse } from "@/services/integration/project/get_project_id";
+
 export interface NewTicketFormData {
     resolver: string;
     dateNeeded: string; // yyyy-mm-dd from <input type="date">
@@ -279,6 +282,13 @@ export default function NewTicketPanelView({
     const [institutionPoolOptions, setInstitutionPoolOptions] = useState<SelectOption[]>([]);
     const [institutionPoolLoading, setInstitutionPoolLoading] = useState(false);
 
+    // ---------------------------------------------------------------------------
+    // Project lookup state (new)
+    // ---------------------------------------------------------------------------
+    const [project, setProject] = useState<ProjectResponse | null>(null);
+    const [projectLoading, setProjectLoading] = useState(false);
+    const [projectError, setProjectError] = useState<string | null>(null);
+
     // ---------------------------------------------------------------
     // Rich-text editors (bold / italic / underline / etc.) for every
     // free-typed field — Subject and Description. Both are contentEditable
@@ -372,7 +382,7 @@ export default function NewTicketPanelView({
     }, []);
 
     useEffect(() => {
-        let cancelled = false;
+        let cancel = false;
 
         const fetchInstitutions = async () => {
             setInstitutionPoolLoading(true);
@@ -387,15 +397,15 @@ export default function NewTicketPanelView({
                         label: i.institution_name,
                     }));
 
-                if (!cancelled) {
+                if (!cancel) {
                     setInstitutionPoolOptions(options);
                 }
             } catch (err) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("Failed to load institution pool options. Please try again.");
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancel) {
                     setInstitutionPoolLoading(false);
                 }
             }
@@ -404,7 +414,7 @@ export default function NewTicketPanelView({
         fetchInstitutions();
 
         return () => {
-            cancelled = true;
+            cancel = true;
         };
     }, []);
 
@@ -416,7 +426,7 @@ export default function NewTicketPanelView({
     const [ticketTypeLoading, setTicketTypeLoading] = useState(false);
 
     useEffect(() => {
-        let cancelled = false;
+        let cancel = false;
 
         const fetchTicketTypes = async () => {
             setTicketTypeLoading(true);
@@ -433,7 +443,7 @@ export default function NewTicketPanelView({
                     })
                 );
 
-                if (!cancelled) {
+                if (!cancel) {
                     setTicketTypeOptions(options);
 
                     // Auto-select the "Service Request" entry so the field
@@ -454,11 +464,11 @@ export default function NewTicketPanelView({
                     }
                 }
             } catch (err) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("Failed to load ticket type. Please try again.");
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancel) {
                     setTicketTypeLoading(false);
                 }
             }
@@ -467,20 +477,20 @@ export default function NewTicketPanelView({
         fetchTicketTypes();
 
         return () => {
-            cancelled = true;
+            cancel = true;
         };
     }, []);
 
     // Decode the JWT once on mount to find which institution to scope
     // the endorser lookup to.
     useEffect(() => {
-        let cancelled = false;
+        let cancel = false;
 
         const resolveInstitution = async () => {
             const token = getAuthToken();
 
             if (!token) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("You must be logged in to load endorsers.");
                 }
                 return;
@@ -489,13 +499,13 @@ export default function NewTicketPanelView({
             const payload = await verifyJWT(token);
 
             if (!payload?.institution_id) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("Unable to determine your institution from your session.");
                 }
                 return;
             }
 
-            if (!cancelled) {
+            if (!cancel) {
                 setInstitutionId(payload.institution_id);
             }
         };
@@ -503,14 +513,14 @@ export default function NewTicketPanelView({
         resolveInstitution();
 
         return () => {
-            cancelled = true;
+            cancel = true;
         };
     }, []);
 
     // Once we know the institution, fetch its users and pull out endorsers
     // (role.can_endorse).
     useEffect(() => {
-        let cancelled = false;
+        let cancel = false;
 
         if (!institutionId) return;
 
@@ -533,15 +543,15 @@ export default function NewTicketPanelView({
                     .filter((u) => u.role?.can_endorse)
                     .map(toOption);
 
-                if (!cancelled) {
+                if (!cancel) {
                     setEndorserOptions(endorsers);
                 }
             } catch (err) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("Failed to load endorsers. Please try again.");
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancel) {
                     setUsersLoading(false);
                 }
             }
@@ -550,7 +560,7 @@ export default function NewTicketPanelView({
         fetchUsers();
 
         return () => {
-            cancelled = true;
+            cancel = true;
         };
     }, [institutionId]);
 
@@ -559,9 +569,10 @@ export default function NewTicketPanelView({
     // institutionId. Re-fetches/re-filters whenever the pool selection
     // changes, and clears out if no pool is selected yet.
     useEffect(() => {
-        let cancelled = false;
+        let cancel = false;
 
         if (!form.approverPoolId) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setResolverOptions([]);
             return;
         }
@@ -585,15 +596,15 @@ export default function NewTicketPanelView({
                         label: g.group_name,
                     }));
 
-                if (!cancelled) {
+                if (!cancel) {
                     setResolverOptions(options);
                 }
             } catch (err) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("Failed to load resolver groups. Please try again.");
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancel) {
                     setResolverGroupsLoading(false);
                 }
             }
@@ -602,14 +613,14 @@ export default function NewTicketPanelView({
         fetchResolverGroups();
 
         return () => {
-            cancelled = true;
+            cancel = true;
         };
     }, [form.approverPoolId]);
 
     // Categories depend on the resolved ticket type, so wait for
     // form.ticketTypeId to be populated by the ticket-type fetch above.
     useEffect(() => {
-        let cancelled = false;
+        let cancel = false;
 
         if (!form.ticketTypeId) return;
 
@@ -626,15 +637,15 @@ export default function NewTicketPanelView({
                         label: c.category_name,
                     }));
 
-                if (!cancelled) {
+                if (!cancel) {
                     setCategoryOptions(options);
                 }
             } catch (err) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("Failed to load categories. Please try again.");
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancel) {
                     setCategoriesLoading(false);
                 }
             }
@@ -643,16 +654,17 @@ export default function NewTicketPanelView({
         fetchCategories();
 
         return () => {
-            cancelled = true;
+            cancel = true;
         };
     }, [form.ticketTypeId]);
 
     // Fetch subcategories whenever the selected category changes.
     useEffect(() => {
-        let cancelled = false;
+        let cancel = false;
 
         // No category selected yet — clear subcategory state and stop.
         if (!form.categoryId) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setSubcategoryOptions([]);
             setSubcategoryDetails([]);
             return;
@@ -675,16 +687,16 @@ export default function NewTicketPanelView({
                     })
                 );
 
-                if (!cancelled) {
+                if (!cancel) {
                     setSubcategoryOptions(options);
                     setSubcategoryDetails(records);
                 }
             } catch (err) {
-                if (!cancelled) {
+                if (!cancel) {
                     setError("Failed to load subcategories. Please try again.");
                 }
             } finally {
-                if (!cancelled) {
+                if (!cancel) {
                     setSubcategoriesLoading(false);
                 }
             }
@@ -693,7 +705,7 @@ export default function NewTicketPanelView({
         fetchSubCategories();
 
         return () => {
-            cancelled = true;
+            cancel = true;
         };
     }, [form.categoryId]);
 
@@ -730,6 +742,28 @@ export default function NewTicketPanelView({
             ...prev,
             subcategoryId: value,
         }));
+    };
+
+    // Project lookup (by project ID stored in form.projectName)
+    const lookupProject = async () => {
+        setProject(null);
+        setProjectError(null);
+
+        const raw = (form.projectName || "").trim();
+        if (!raw) {
+            setProjectError("Enter a project ID to look up.");
+            return;
+        }
+
+        setProjectLoading(true);
+        try {
+            const p = await getProjectByID(raw);
+            setProject(p);
+        } catch (err) {
+            setProjectError("Project not found or failed to load.");
+        } finally {
+            setProjectLoading(false);
+        }
     };
 
     const handleReloadTemplate = () => {
@@ -816,6 +850,9 @@ export default function NewTicketPanelView({
         setError(null);
         setSubcategoryOptions([]);
         setSubcategoryDetails([]);
+        setProject(null);
+        setProjectError(null);
+        setProjectLoading(false);
 
         if (descriptionRef.current) {
             descriptionRef.current.innerHTML = "";
@@ -1006,22 +1043,90 @@ export default function NewTicketPanelView({
                             />
                         </div>
 
-                        {/* Project Name */}
-                        <SelectField
-                            label="Project Name"
-                            value={form.projectName}
-                            onChange={updateField("projectName")}
-                            options={[
-                                {
-                                    id: "Project Alpha",
-                                    label: "Project Alpha",
-                                },
-                                {
-                                    id: "Project Beta",
-                                    label: "Project Beta",
-                                },
-                            ]}
-                        />
+                        {/* Project lookup: user enters a project ID and clicks Lookup */}
+                        <div className="border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
+                            <label className="block text-xs font-bold text-[#1E4637] mb-1">
+                                Project ID
+                            </label>
+
+                            <div className="flex gap-2 items-center">
+                                <input
+                                    type="text"
+                                    value={form.projectName}
+                                    onChange={(e) => {
+                                        updateField("projectName")(e.target.value);
+                                        // clear project preview when user edits the ID
+                                        setProject(null);
+                                        setProjectError(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            lookupProject();
+                                        }
+                                    }}
+                                    placeholder="Enter project ID and click Lookup"
+                                    className="
+                                        flex-1
+                                        bg-transparent
+                                        border
+                                        border-gray-200
+                                        rounded-lg
+                                        px-2.5
+                                        py-1.5
+                                        text-sm
+                                        text-gray-700
+                                        focus:outline-none
+                                        focus:ring-2
+                                        focus:ring-[#1E4637]/30
+                                    "
+                                />
+
+                                <button
+                                    type="button"
+                                    onClick={lookupProject}
+                                    disabled={projectLoading}
+                                    className="
+                                        px-3
+                                        py-1.5
+                                        rounded-lg
+                                        font-semibold
+                                        text-sm
+                                        bg-[#1E4637]
+                                        text-white
+                                        hover:bg-[#16352A]
+                                        transition-colors
+                                        disabled:opacity-60
+                                    "
+                                >
+                                    {projectLoading ? "Looking up…" : "Lookup"}
+                                </button>
+                            </div>
+
+                            {projectError && (
+                                <div className="text-xs text-rose-500 mt-2">
+                                    {projectError}
+                                </div>
+                            )}
+
+                            {project && (
+                                <div className="mt-3 text-sm text-gray-700 space-y-1">
+                                    <div>
+                                        <span className="text-gray-400 font-semibold">Project Name:</span>
+                                        <span className="ml-1 font-semibold">{project.project_name}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-400 font-semibold">Environment:</span>
+                                        <span className="ml-1">{project.environment}</span>
+                                    </div>
+                                    {project.description && (
+                                        <div className="text-gray-600 mt-1 whitespace-pre-wrap">
+                                            {project.description}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* =================================================

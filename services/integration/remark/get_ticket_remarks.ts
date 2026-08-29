@@ -1,24 +1,22 @@
 import { get } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
 
-// Matches the actual RemarkOption shape returned by GET /api/v1/remarks/get
+// Matches the TicketRemark model from the backend (ticketremark table)
 export interface TicketRemark {
-  id: number;
-  institution_id: number;
+  remark_id: string;
+  ticket_id: string;
+  user_id: number;
   remark_type: string;
-  reason: string;
-  is_active: boolean;
+  message: string;
   created_at: string;
-  updated_at: string;
 }
 
 export async function getTicketRemarks(
   ticketId: string | number
 ): Promise<TicketRemark[]> {
   return get<TicketRemark[]>(
-    ApiEndpoint.GET_REMARKS,
+    ApiEndpoint.GET_TICKET_REMARKS(ticketId),
     {
-      params: { ticket_id: ticketId },
       unwrap: true,
     }
   );

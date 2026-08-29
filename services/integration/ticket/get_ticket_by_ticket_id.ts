@@ -21,8 +21,8 @@ export interface TicketDetails {
   created_at: string;
   updated_at: string;
 
-  cancelled_by: number;
-  cancelled_at: string | null;
+  cancel_by: number;
+  cancel_at: string | null;
   cancellation_reason: string;
 
   started_at: string | null;

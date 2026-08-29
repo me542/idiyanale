@@ -52,9 +52,9 @@ function getStatusStyle(status: string) {
         color: "#fff",
       };
 
-    case "cancelled":
+    case "cancel":
       return {
-        backgroundColor: lightTheme.cancelled,
+        backgroundColor: lightTheme.cancel,
         color: "#fff",
       };
 
@@ -163,7 +163,7 @@ export default function MyTicket({ tickets = [] }: Props) {
       return;
     }
 
-    let cancelled = false;
+    let cancel = false;
 
     async function load() {
       setLoading(true);
@@ -185,23 +185,24 @@ export default function MyTicket({ tickets = [] }: Props) {
 
         const apiRows = await getAllTicketsByInstitution(institutionId);
 
-        if (cancelled) return;
+        if (cancel) return;
 
         const mapped = apiRows.map(mapApiToRow);
 
         setRawTickets(apiRows);
         setFetched(mapped);
-      } catch (err: any) {
-        if (cancelled) return;
+      } catch (err: unknown) {
+        if (cancel) return;
 
-        setError(
-          err?.message ||
-            "Failed to load tickets. Check your network or authentication."
-        );
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to load tickets. Check your network or authentication.";
 
+        setError(message);
         setFetched([]);
       } finally {
-        if (!cancelled) {
+        if (!cancel) {
           setLoading(false);
         }
       }
@@ -210,7 +211,7 @@ export default function MyTicket({ tickets = [] }: Props) {
     load();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, [tickets]);
 

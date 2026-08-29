@@ -32,7 +32,7 @@ export function mapTicketsToDueActivity(
   const completedStatuses = new Set([
     "resolved",
     "closed",
-    "cancelled",
+    "cancel",
     "canceled",
   ]);
 
@@ -43,7 +43,7 @@ export function mapTicketsToDueActivity(
   endOfToday.setHours(23, 59, 59, 999);
 
   return tickets
-    // Don't display completed/cancelled tickets
+    // Don't display completed/cancel tickets
     .filter((ticket) => {
       const status = normalizeStatus(ticket.status);
 

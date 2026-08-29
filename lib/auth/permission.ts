@@ -19,12 +19,12 @@ export function useAuth(): UseAuthResult {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     (async () => {
       const token = getTokenFromCookie();
       if (!token) {
-        if (!cancelled) {
+        if (!cancel) {
           setUser(null);
           setLoading(false);
         }
@@ -32,14 +32,14 @@ export function useAuth(): UseAuthResult {
       }
 
       const payload = await verifyJWT(token);
-      if (!cancelled) {
+      if (!cancel) {
         setUser(payload);
         setLoading(false);
       }
     })();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, []);
 

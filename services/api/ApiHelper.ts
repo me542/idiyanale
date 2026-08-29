@@ -22,11 +22,7 @@ function buildUrl(endpoint: string, params?: Options["params"]) {
 
 function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
-
-  return (
-    localStorage.getItem("token") ??
-    localStorage.getItem("access_token")
-  );
+  return localStorage.getItem("token");
 }
 
 function getStoredRole(): string | null {
@@ -39,7 +35,6 @@ export function clearAuth() {
   if (typeof window === "undefined") return;
 
   localStorage.removeItem("token");
-  localStorage.removeItem("access_token");
   localStorage.removeItem("role");
   localStorage.removeItem("permissions");
   localStorage.removeItem("institution_id");

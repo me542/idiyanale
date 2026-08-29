@@ -8,7 +8,9 @@ export type TicketProcessAction =
   | "ungrab"
   | "resolve"
   | "close"
-  | "cancel";
+  | "cancel"
+  | "hold"
+  | "resume";
 
 export interface ProcessTicketRequest {
   action: TicketProcessAction;
@@ -17,9 +19,10 @@ export interface ProcessTicketRequest {
 }
 
 export interface ProcessTicketResponse {
-  code: string;
+  ret_code: string;
   message: string;
-  data?: unknown;
+  response?: unknown;
+  error?: unknown;
 }
 
 export async function processTicket(

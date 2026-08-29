@@ -5,7 +5,7 @@ export type StatusBucket =
   | "inProgress"
   | "resolved"
   | "closed"
-  | "cancelled";
+  | "cancel";
 
 export type ReviewStage = "endorser" | "approver" | "assignment";
 
@@ -26,14 +26,14 @@ export const STATUS_MAP: Record<string, StatusBucket> = {
   forapproval: "forReview",
   approved: "forReview",
 
-  inprogress: "inProgress",
+  inProgress: "inProgress",
 
   resolved: "resolved",
 
   closed: "closed",
 
-  cancelled: "cancelled",
-  canceled: "cancelled",
+  cancel: "cancel",
+  canceled: "cancel",
 };
 
 /**
@@ -69,7 +69,7 @@ export const BUCKET_LABELS: Record<StatusBucket, string> = {
   inProgress: "In Progress",
   resolved: "Resolved",
   closed: "Closed",
-  cancelled: "Cancelled",
+  cancel: "cancel",
 };
 
 export const STAGE_LABELS: Record<ReviewStage, string> = {

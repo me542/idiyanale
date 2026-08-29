@@ -25,3 +25,17 @@ export const editRole = async (
     data
   );
 };
+
+export interface ToggleRoleStatusResponse {
+  ret_code?: string;
+  message?: string;
+  response?: { status: string };
+}
+
+export const toggleRoleStatus = async (
+  roleId: number | string
+): Promise<ToggleRoleStatusResponse> => {
+  return patch<ToggleRoleStatusResponse>(
+    ApiEndpoint.PATCH_TOGGLE_ROLE_STATUS(roleId)
+  );
+};

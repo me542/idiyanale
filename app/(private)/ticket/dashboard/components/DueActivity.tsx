@@ -43,10 +43,10 @@ function getStatusStyle(status: string) {
         color: "#fff",
       };
 
-    case "cancelled":
+    case "cancel":
     case "canceled":
       return {
-        backgroundColor: lightTheme.cancelled,
+        backgroundColor: lightTheme.cancel,
         color: "#fff",
       };
 
@@ -71,7 +71,7 @@ export default function DueActivity() {
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     async function loadDueActivity() {
       try {
@@ -94,20 +94,20 @@ export default function DueActivity() {
         const fetchedTickets =
           await getAllTicketsByInstitution(institutionId);
 
-        if (!cancelled) {
+        if (!cancel) {
           setTickets(fetchedTickets);
           setActivities(mapTicketsToDueActivity(fetchedTickets));
         }
       } catch (err) {
         console.error("Failed to load due activity:", err);
 
-        if (!cancelled) {
+        if (!cancel) {
           setError("Couldn't load due activity.");
           setActivities([]);
           setTickets([]);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancel) {
           setLoading(false);
         }
       }
@@ -116,7 +116,7 @@ export default function DueActivity() {
     loadDueActivity();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, []);
 

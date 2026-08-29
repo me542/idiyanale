@@ -127,7 +127,7 @@ export default function SuperAdminLoginPage() {
       }
 
       // Client-side storage for use in fetch/axios headers, etc.
-      localStorage.setItem("access_token", token);
+      localStorage.setItem("token", token);
 
       // Middleware / server components read the "token" cookie via
       // next/headers cookies() — not localStorage — so set it here too.

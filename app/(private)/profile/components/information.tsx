@@ -55,8 +55,7 @@ export function InformationPanel({
         setError("");
 
         const token =
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token");
+          localStorage.getItem("token")
 
         if (!token) {
           setError("Authentication token not found.");

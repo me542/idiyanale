@@ -16,6 +16,11 @@ export interface GetProjectResponse {
   data: ProjectResponse;
 }
 
+/**
+ * Fetch project details by ID.
+ *
+ * Returns the ProjectResponse (the `data` object returned by the API).
+ */
 export async function getProjectByID(
   projectId: number | string
 ): Promise<ProjectResponse> {

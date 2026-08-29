@@ -1,10 +1,11 @@
 export interface StatusCounts {
   total: number;
+  myTicket: number;
   forReview: number;
   inProgress: number;
   resolved: number;
   closed: number;
-  cancelled: number;
+  cancel: number;
 }
 
 export interface TicketRow {

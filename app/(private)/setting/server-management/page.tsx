@@ -503,8 +503,7 @@ export default function ServersPage() {
   const resolveInstitutionId = async () => {
     try {
       const token =
-        localStorage.getItem("token") ||
-        localStorage.getItem("access_token");
+        localStorage.getItem("token");
 
       if (!token) {
         console.error("No JWT token found");

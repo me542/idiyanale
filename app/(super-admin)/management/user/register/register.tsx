@@ -74,7 +74,7 @@ export default function AddUserModal({
   useEffect(() => {
     if (!open) return;
 
-    let cancelled = false;
+    let cancel = false;
 
     const fetchUserInstitution = async () => {
   try {
@@ -82,8 +82,7 @@ export default function AddUserModal({
     setInstitutionsError(false);
 
     const token =
-      localStorage.getItem("token") ||
-      localStorage.getItem("access_token");
+      localStorage.getItem("token");
 
     if (!token) {
       throw new Error("Authentication token not found.");
@@ -97,7 +96,7 @@ export default function AddUserModal({
 
     const data = await getInstitutions();
 
-    if (cancelled) return;
+    if (cancel) return;
 
     const institutionList = (data ?? []).filter(
       (institution) => institution.status.toLowerCase() === "active"
@@ -124,7 +123,7 @@ export default function AddUserModal({
   } catch (err) {
     console.error("Failed to load user institution:", err);
 
-    if (!cancelled) {
+    if (!cancel) {
       setInstitutions([]);
       setInstitutionsError(true);
       setError(
@@ -132,7 +131,7 @@ export default function AddUserModal({
       );
     }
   } finally {
-    if (!cancelled) {
+    if (!cancel) {
       setInstitutionsLoading(false);
     }
   }
@@ -141,7 +140,7 @@ export default function AddUserModal({
     fetchUserInstitution();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, [open]);
 
@@ -151,7 +150,7 @@ export default function AddUserModal({
       return;
     }
 
-    let cancelled = false;
+    let cancel = false;
 
     const fetchPositions = async () => {
       try {
@@ -160,19 +159,19 @@ export default function AddUserModal({
 
         const res = await getPositionsByInstitutionId(form.institution);
 
-        if (cancelled) return;
+        if (cancel) return;
 
         const positionList = res?.response ?? [];
         setPositions(positionList);
       } catch (err) {
         console.error("Failed to load positions:", err);
 
-        if (!cancelled) {
+        if (!cancel) {
           setPositions([]);
           setPositionsError(true);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancel) {
           setPositionsLoading(false);
         }
       }
@@ -181,7 +180,7 @@ export default function AddUserModal({
     fetchPositions();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, [open, form.institution]);
 

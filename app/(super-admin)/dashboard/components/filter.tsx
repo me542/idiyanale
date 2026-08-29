@@ -19,29 +19,29 @@ const Filter: React.FC<FilterProps> = ({ onFilterChange }) => {
   const [institutionsError, setInstitutionsError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     async function loadInstitutions() {
       setIsLoadingInstitutions(true);
       setInstitutionsError(null);
       try {
         const result = await getInstitutions();
-        if (cancelled) return;
+        if (cancel) return;
         setInstitutions(['ALL', ...(result.response ?? []).map((r) => r.institution_name)]);
       } catch (err) {
-        if (cancelled) return;
+        if (cancel) return;
         setInstitutionsError(
           err instanceof Error ? err.message : 'Failed to load institutions.'
         );
         setInstitutions(['ALL']); // fall back to just ALL so the dropdown still works
       } finally {
-        if (!cancelled) setIsLoadingInstitutions(false);
+        if (!cancel) setIsLoadingInstitutions(false);
       }
     }
 
     loadInstitutions();
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, []);
 

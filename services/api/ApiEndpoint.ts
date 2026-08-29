@@ -55,6 +55,7 @@ export const ApiEndpoint = {
 
   PATCH_CHANGED_ROLE: (id: number | string) => `/api/v1/role/change/${id}`,
   PATCH_EDIT_ROLE: (id: number | string) => `/api/v1/role/edit/${id}`,
+  PATCH_TOGGLE_ROLE_STATUS: (id: number | string) => `/api/v1/role/toggle-status/${id}`,
 
   // --------------------- INSTITUTION ----------------------
   POST_ADD_INSTI: "/api/v1/institution/create",
@@ -86,6 +87,15 @@ export const ApiEndpoint = {
   GET_REMARKS: "/api/v1/remark/get",
 
   PATCH_REMARKS: "/api/v1/remark/edit",
+
+  // Ticket-specific remarks
+  GET_TICKET_REMARKS: (ticketId: string | number) => `/api/v1/ticket/${ticketId}/remarks`,
+  POST_TICKET_REMARK: (ticketId: string | number) => `/api/v1/ticket/${ticketId}/remarks`,
+
+  // Ticket-specific attachments
+  GET_TICKET_ATTACHMENTS: (ticketId: string | number) => `/api/v1/ticket/${ticketId}/attachments`,
+  POST_TICKET_ATTACHMENTS: (ticketId: string | number) => `/api/v1/ticket/${ticketId}/attachments`,
+  DELETE_TICKET_ATTACHMENT: (ticketId: string | number, attachmentId: number) => `/api/v1/ticket/${ticketId}/attachments/${attachmentId}`,
 
 // --------------------- PROJECT ---------------------------
 

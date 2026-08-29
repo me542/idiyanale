@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { X, AlertCircle, Save, SquareChartGantt, Check, User, MessageSquare, Pencil,} from "lucide-react";
 
-export type ToastType = | "saved" | "error" | "endorsed" | "approved" | "assigned" | "resolved" | "success" | "message" | "edited" | "cancelled";
+export type ToastType = | "saved" | "error" | "endorsed" | "approved" | "assigned" | "resolved" | "success" | "message" | "edited" | "cancel";
 
 export interface ToastItem {
   id: number;
@@ -148,7 +148,7 @@ const toastStyles: Record<
     icon: <Pencil size={20} />,
   },
 
-  cancelled: {
+  cancel: {
     bg: "bg-gray-50",
     border: "border-gray-200",
     iconColor: "text-gray-600",
@@ -319,6 +319,6 @@ export function useAppToast() {
     success: toast("success"),
     message: toast("message"),
     edited: toast("edited"),
-    cancelled: toast("cancelled"),
+    cancel: toast("cancel"),
   };
 }

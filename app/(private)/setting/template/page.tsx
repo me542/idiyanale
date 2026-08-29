@@ -105,7 +105,7 @@ export default function Page() {
    */
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     async function loadTicketTypes() {
       setLoading(true);
@@ -113,7 +113,7 @@ export default function Page() {
       try {
         const result = await getTicketTypes();
 
-        if (cancelled) {
+        if (cancel) {
           return;
         }
 
@@ -175,7 +175,7 @@ export default function Page() {
         setSelectedCategoryId(null);
         setSelectedSubCategoryId(null);
       } finally {
-        if (!cancelled) {
+        if (!cancel) {
           setLoading(false);
         }
       }
@@ -184,7 +184,7 @@ export default function Page() {
     loadTicketTypes();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, []);
 
@@ -202,7 +202,7 @@ export default function Page() {
    */
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     async function loadCategories() {
       if (!selectedTicketTypeId) {
@@ -231,7 +231,7 @@ export default function Page() {
           selectedTicketTypeId
         );
 
-        if (cancelled) {
+        if (cancel) {
           return;
         }
 
@@ -287,7 +287,7 @@ export default function Page() {
           alert(error.message);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancel) {
           setCategoriesLoading(false);
         }
       }
@@ -296,7 +296,7 @@ export default function Page() {
     loadCategories();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, [selectedTicketTypeId]);
 
@@ -324,7 +324,7 @@ export default function Page() {
    */
 
   useEffect(() => {
-    let cancelled = false;
+    let cancel = false;
 
     async function loadSubCategories() {
       if (!selectedCategoryId) {
@@ -352,7 +352,7 @@ export default function Page() {
             selectedCategoryId
           );
 
-        if (cancelled) {
+        if (cancel) {
           return;
         }
 
@@ -433,7 +433,7 @@ export default function Page() {
     loadSubCategories();
 
     return () => {
-      cancelled = true;
+      cancel = true;
     };
   }, [selectedCategoryId]);
 
