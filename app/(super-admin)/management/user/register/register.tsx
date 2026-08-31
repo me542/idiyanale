@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getInstitutions, InstitutionResp } from "@/app/(private)/setting/user-management/register/api/get-insti-public";
+import { getInstitutions, InstitutionResp } from "@/app/(private)/management/user-management/register/api/get-insti-public";
 import { getPositionsByInstitutionId, Position } from "@/services/integration/super_admin/get_position_insti_id"; 
 import { addPosition } from "@/services/integration/insti-admin/post_position";
 import { registerUser, RegisterUserRequest } from "@/services/integration/user/post_resgister_user"; 

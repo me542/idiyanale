@@ -114,7 +114,7 @@ export default function Header() {
 
       if (path === "Ticket") label = "Ticket";
       if (path === "Minor Task") label = "Minor Task";
-      if (path === "Setting") label = "Setting";
+      if (path === "management") label = "management";
       if (path === "Chat") label = "Chat";
       if (path === "Knowledge") label = "Knowledge";
 

@@ -75,7 +75,7 @@ export const config = {
     "/minor-task/:path*",
     "/chat/:path*",
     "/knowledge/:path*",
-    "/setting/:path*",
+    "/management/:path*",
     "/login",
     "/super-admin/:path*",
     "/dashboard/:path*",

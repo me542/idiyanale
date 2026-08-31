@@ -27,17 +27,15 @@ const kpi = {
 
 export default function Page() {
   const [activeNav, setActiveNav] = useState<NavKey>("work");
-  const [themeOn, setThemeOn] = useState(true);
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-6">
         <ProfileSidebar
           activeNav={activeNav}
           onSelectNav={setActiveNav}
-          themeOn={themeOn}
-          onToggleTheme={setThemeOn}
         />
+
         <InformationPanel
           activeNav={activeNav}
           kpi={kpi}

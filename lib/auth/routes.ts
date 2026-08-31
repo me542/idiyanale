@@ -19,11 +19,11 @@ export const ROUTES: AppRoute[] = [
   { path: "/minor-task/reports", title: "Reports", clickable: true },
   { path: "/chat", title: "Chat", clickable: true },
   { path: "/knowledge", title: "Knowledge", clickable: true },
-  { path: "/setting/profile", title: "Profile", clickable: true },
-  { path: "/setting/top", title: "Top", clickable: true },
-  { path: "/setting/template", title: "Template", clickable: true },
-  { path: "/setting/user-management", title: "User Management", clickable: true },
-    { path: "/setting/server-management", title: "Server Management", clickable: true },
+  { path: "/management/profile", title: "Profile", clickable: true },
+  { path: "/management/top", title: "Top", clickable: true },
+  { path: "/management/template", title: "Template", clickable: true },
+  { path: "/management/user-management", title: "User Management", clickable: true },
+    { path: "/management/server-management", title: "Server Management", clickable: true },
 
   // super-admin
   { path: "/dashboard", title: "Dashboard", clickable: true },
@@ -34,7 +34,7 @@ export const ROUTES: AppRoute[] = [
 export const NON_CLICKABLE_PARENTS = new Set([
   "/ticket",
   "/minor-task",
-  "/setting",
+  "/management",
   "/management",
 ]);
 
@@ -48,7 +48,7 @@ export const PROTECTED_PATHS = [
   "/minor-task",
   "/chat",
   "/knowledge",
-  "/setting",
+  "/management",
 ];
 
 // Super-admin-protected prefixes — used by middleware.ts

@@ -60,10 +60,10 @@ export const SIDEBAR_MENU = [
 		label: "Management",
 		icon: BriefcaseBusiness,
 		children: [
-			{ label: "Template", path: "/setting/template" },
-			{ label: "User Management", path: "/setting/user-management" },
-			{ label: "Server Management", path: "/setting/server-management" },
-			{ label: "Top", path: "/setting/top" },
+			{ label: "Template", path: "/management/template" },
+			{ label: "User Management", path: "/management/user-management" },
+			{ label: "Server Management", path: "/management/server-management" },
+			{ label: "Top", path: "/management/top" },
 		],
 	},
 

@@ -35,6 +35,20 @@ import {
 
 import { patchUserPosition } from "@/services/integration/insti-admin/patch_position";
 
+import {
+  createResolverGroup,
+  type CreateResolverGroupRequest,
+} from "@/services/integration/institution/post-create-resolver-group";
+
+import {
+  getResolverGroups,
+  type ResolverGroup,
+} from "@/services/integration/institution/get-resolver-groups";
+
+import {
+  updateResolverGroup,
+} from "@/services/integration/institution/put-update-resolver-group";
+
 import AddUserModal from "./register/register";
 
 // Adjust this import path to wherever verifyJWT actually lives in your project.
@@ -56,6 +70,7 @@ type Staff = {
   positionId: number | null;
   positionName: string;
   status: Status;
+  canResolve: boolean;
 };
 
 type InstitutionGroup = {
@@ -144,6 +159,7 @@ function toStaff(
     positionId: user.job_positions?.position_id ?? null,
     positionName: user.job_positions?.position_name ?? "—",
     status: fromApiStatus(user.status),
+    canResolve: user.role?.can_resolve ?? false,
   }));
 }
 
@@ -211,6 +227,33 @@ export default function UserManagementPage() {
 
   const [institutionRoles, setInstitutionRoles] =
     useState<Role[]>([]);
+
+  const [resolverGroups, setResolverGroups] =
+    useState<ResolverGroup[]>([]);
+
+  const [showCreateGroupModal, setShowCreateGroupModal] =
+    useState(false);
+
+  const [newGroupName, setNewGroupName] = useState("");
+
+  const [selectedMemberIds, setSelectedMemberIds] =
+    useState<number[]>([]);
+
+  const [savingGroup, setSavingGroup] = useState(false);
+
+  const [editingGroup, setEditingGroup] =
+    useState<ResolverGroup | null>(null);
+
+  const [editGroupName, setEditGroupName] = useState("");
+
+  const [editMemberIds, setEditMemberIds] =
+    useState<number[]>([]);
+
+  const [editGroupStatus, setEditGroupStatus] =
+    useState<"active" | "inactive">("active");
+
+  const [togglingGroupId, setTogglingGroupId] =
+    useState<number | null>(null);
 
   const [showAddRoleModal, setShowAddRoleModal] =
     useState(false);
@@ -331,10 +374,11 @@ export default function UserManagementPage() {
         return;
       }
 
-      const [users, positions, rolesRes] = await Promise.all([
+      const [users, positions, rolesRes, groupsRes] = await Promise.all([
         getUsersByInstitution(ownInstitution.institution_id),
         getPositionsByInstitutionId(ownInstitution.institution_id),
         getRolesByInstitution(ownInstitution.institution_id).catch(() => ({ response: [] as Role[] })),
+        getResolverGroups().catch(() => ({ response: [] as ResolverGroup[] })),
       ]);
 
       setGroups([
@@ -342,6 +386,7 @@ export default function UserManagementPage() {
       ]);
 
       setInstitutionRoles(rolesRes.response ?? []);
+      setResolverGroups(groupsRes.response ?? []);
     } catch (err) {
       console.error(
         "Failed to load institution/user data:",
@@ -915,6 +960,7 @@ export default function UserManagementPage() {
           ====================================================== */}
 
           {activeTab === "users" && (
+            <>
             <div className="overflow-hidden rounded-2xl border border-[#E7E9ED] bg-white shadow-sm">
 
               <div className="flex items-center justify-between border-b border-[#EDEFF2] px-6 py-4">
@@ -1321,6 +1367,376 @@ export default function UserManagementPage() {
                   </div>
                 </>
               )}
+            </div>
+
+            {/* ======================================================
+                RESOLVER GROUPS SECTION (inside Users tab)
+            ====================================================== */}
+            <div className="mt-5 overflow-hidden rounded-2xl border border-[#E7E9ED] bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-[#EDEFF2] px-6 py-4">
+                <div>
+                  <h1 className="text-[15px] font-bold text-[#1F3D33]">
+                    Resolver Groups
+                  </h1>
+                  <p className="mt-0.5 text-[12px] text-[#9AA0A8]">
+                    {resolverGroups.length}{' '}
+                    {resolverGroups.length === 1 ? 'group' : 'groups'}
+                  </p>
+                </div>
+                {!loading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateGroupModal(true);
+                      setSelectedMemberIds([]);
+                      setNewGroupName("");
+                    }}
+                    className="flex h-9 items-center gap-1.5 rounded-full bg-[#6FCF97] px-4 text-[13px] font-semibold text-white shadow-sm transition-all hover:bg-[#5FBF88] active:scale-[0.98]"
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    Create Group
+                  </button>
+                )}
+              </div>
+
+              {resolverGroups.length === 0 ? (
+                <div className="px-6 py-10 text-center">
+                  <p className="text-[13px] text-[#9AA0A8]">
+                    No resolver groups yet. Create one to assign members for ticket resolution.
+                  </p>
+                </div>
+              ) : (
+                <div className="px-6 py-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {resolverGroups.map((group) => {
+                      const memberNames = group.member_ids
+                        .map((id) => {
+                          const staff = groups[0]?.staff.find(
+                            (s) => Number(s.id) === id
+                          );
+                          return staff
+                            ? `${staff.firstName} ${staff.lastName}`
+                            : null;
+                        })
+                        .filter(Boolean);
+
+                      return (
+                        <div
+                          key={group.resolver_group_id}
+                          className="rounded-xl border border-[#E7E9ED] bg-[#FAFBFC] p-4 transition hover:border-[#D1D5DB]"
+                        >
+                          <div className="mb-2 flex items-center justify-between">
+                            <h3 className="text-[13px] font-bold text-[#1F3D33] truncate">
+                              {group.group_name}
+                            </h3>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={togglingGroupId === group.resolver_group_id}
+                                onClick={async () => {
+                                  setTogglingGroupId(group.resolver_group_id);
+                                  try {
+                                    const nextStatus = group.status === "active" ? "inactive" : "active";
+                                    await updateResolverGroup(group.resolver_group_id, {
+                                      group_name: group.group_name,
+                                      member_ids: group.member_ids,
+                                      status: nextStatus,
+                                    });
+                                    setResolverGroups((prev) =>
+                                      prev.map((g) =>
+                                        g.resolver_group_id === group.resolver_group_id
+                                          ? { ...g, status: nextStatus }
+                                          : g
+                                      )
+                                    );
+                                  } catch {
+                                    // ignore
+                                  } finally {
+                                    setTogglingGroupId(null);
+                                  }
+                                }}
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold transition disabled:opacity-50 ${
+                                  group.status === "active"
+                                    ? "bg-[#6FCF97] text-white"
+                                    : "bg-[#F1F2F4] text-[#8A9099]"
+                                }`}
+                              >
+                                {group.status === "active" ? "Active" : "Inactive"}
+                              </button>
+                              <button
+                                type="button"
+                                title="Edit group"
+                                onClick={() => {
+                                  setEditingGroup(group);
+                                  setEditGroupName(group.group_name);
+                                  const resolverIds = new Set(
+                                    (groups[0]?.staff ?? [])
+                                      .filter((s) => s.canResolve)
+                                      .map((s) => Number(s.id))
+                                  );
+                                  setEditMemberIds(
+                                    group.member_ids.filter((id) => resolverIds.has(id))
+                                  );
+                                  setEditGroupStatus(group.status);
+                                }}
+                                className="flex h-6 w-6 items-center justify-center rounded-md text-[#8A9099] transition hover:bg-[#E7E9ED] hover:text-[#3C4046]"
+                              >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {memberNames.length > 0 ? (
+                              memberNames.map((name, idx) => (
+                                <span
+                                  key={`${group.resolver_group_id}-${idx}`}
+                                  className="inline-block rounded-full bg-[#E7E9ED] px-2 py-0.5 text-[10px] font-medium text-[#5B616B]"
+                                >
+                                  {name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[11px] text-[#9AA0A8]">
+                                {group.member_ids.length}{' '}
+                                {group.member_ids.length === 1 ? 'member' : 'members'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            </>
+          )}
+
+          {/* ======================================================
+              CREATE RESOLVER GROUP MODAL
+          ====================================================== */}
+          {showCreateGroupModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="mb-4 text-sm font-bold text-[#1F3D33]">
+                  Create Resolver Group
+                </h3>
+                <label className="mb-1 block text-[12px] font-semibold text-[#5B616B]">
+                  Group Name
+                </label>
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="e.g. Backend Team"
+                  className="mb-4 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#1F3D33]"
+                />
+                <label className="mb-1 block text-[12px] font-semibold text-[#5B616B]">
+                  Members
+                </label>
+                <p className="mb-1 text-[11px] text-[#9AA0A8]">
+                  Only users with the resolver permission are listed.
+                </p>
+                <div className="mb-4 max-h-48 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                  {(() => {
+                    const resolvers = (groups[0]?.staff ?? []).filter((s) => s.canResolve);
+                    return resolvers.length > 0 ? (
+                      resolvers.map((staff) => (
+                        <label
+                          key={staff.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-gray-700 transition hover:bg-gray-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedMemberIds.includes(Number(staff.id))}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMemberIds((prev) => [...prev, Number(staff.id)]);
+                              } else {
+                                setSelectedMemberIds((prev) => prev.filter((id) => id !== Number(staff.id)));
+                              }
+                            }}
+                            className="h-4 w-4 rounded accent-[#1F3D33]"
+                          />
+                          <span className="font-medium text-[#111318]">
+                            {staff.firstName} {staff.lastName}
+                          </span>
+                          <span className="text-[11px] text-[#9AA0A8]">
+                            ({staff.roleName})
+                          </span>
+                        </label>
+                      ))
+                    ) : (
+                      <p className="py-4 text-center text-[13px] text-[#9AA0A8]">
+                        No users with resolver permission found. Ask an admin to enable the resolver permission on a role.
+                      </p>
+                    );
+                  })()}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateGroupModal(false);
+                      setNewGroupName("");
+                      setSelectedMemberIds([]);
+                    }}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!newGroupName.trim() || selectedMemberIds.length === 0 || savingGroup}
+                    onClick={async () => {
+                      if (!newGroupName.trim() || selectedMemberIds.length === 0) return;
+                      setSavingGroup(true);
+                      try {
+                        await createResolverGroup({
+                          group_name: newGroupName.trim(),
+                          member_ids: selectedMemberIds,
+                        });
+                        await loadData();
+                        setShowCreateGroupModal(false);
+                        setNewGroupName("");
+                        setSelectedMemberIds([]);
+                      } catch {
+                        // ignore
+                      } finally {
+                        setSavingGroup(false);
+                      }
+                    }}
+                    className="rounded-lg bg-[#1F3D33] px-4 py-2 text-xs font-bold text-white hover:bg-[#2B5245] disabled:opacity-40"
+                  >
+                    {savingGroup ? "Creating..." : "Create Group"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================
+              EDIT RESOLVER GROUP MODAL
+          ====================================================== */}
+          {editingGroup && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="mb-4 text-sm font-bold text-[#1F3D33]">
+                  Edit Resolver Group
+                </h3>
+                <label className="mb-1 block text-[12px] font-semibold text-[#5B616B]">
+                  Group Name
+                </label>
+                <input
+                  type="text"
+                  value={editGroupName}
+                  onChange={(e) => setEditGroupName(e.target.value)}
+                  placeholder="e.g. Backend Team"
+                  className="mb-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#1F3D33]"
+                />
+                <label className="mb-1 block text-[12px] font-semibold text-[#5B616B]">
+                  Status
+                </label>
+                <div className="mb-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditGroupStatus("active")}
+                    className={`rounded-full px-4 py-1.5 text-[12px] font-semibold transition ${
+                      editGroupStatus === "active"
+                        ? "bg-[#6FCF97] text-white"
+                        : "bg-[#F1F2F4] text-[#8A9099] hover:bg-[#E7E9ED]"
+                    }`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditGroupStatus("inactive")}
+                    className={`rounded-full px-4 py-1.5 text-[12px] font-semibold transition ${
+                      editGroupStatus === "inactive"
+                        ? "bg-[#F1F2F4] text-[#8A9099]"
+                        : "bg-[#F1F2F4] text-[#8A9099] hover:bg-[#E7E9ED]"
+                    }`}
+                  >
+                    Inactive
+                  </button>
+                </div>
+                <label className="mb-1 block text-[12px] font-semibold text-[#5B616B]">
+                  Members
+                </label>
+                <p className="mb-1 text-[11px] text-[#9AA0A8]">
+                  Only users with the resolver permission are listed.
+                </p>
+                <div className="mb-4 max-h-48 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                  {(() => {
+                    const resolvers = (groups[0]?.staff ?? []).filter((s) => s.canResolve);
+                    return resolvers.length > 0 ? (
+                      resolvers.map((staff) => (
+                        <label
+                          key={staff.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-gray-700 transition hover:bg-gray-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={editMemberIds.includes(Number(staff.id))}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setEditMemberIds((prev) => [...prev, Number(staff.id)]);
+                              } else {
+                                setEditMemberIds((prev) => prev.filter((id) => id !== Number(staff.id)));
+                              }
+                            }}
+                            className="h-4 w-4 rounded accent-[#1F3D33]"
+                          />
+                          <span className="font-medium text-[#111318]">
+                            {staff.firstName} {staff.lastName}
+                          </span>
+                          <span className="text-[11px] text-[#9AA0A8]">
+                            ({staff.roleName})
+                          </span>
+                        </label>
+                      ))
+                    ) : (
+                      <p className="py-4 text-center text-[13px] text-[#9AA0A8]">
+                        No users with resolver permission found.
+                      </p>
+                    );
+                  })()}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingGroup(null)}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!editGroupName.trim() || editMemberIds.length === 0 || savingGroup}
+                    onClick={async () => {
+                      if (!editGroupName.trim() || editMemberIds.length === 0) return;
+                      setSavingGroup(true);
+                      try {
+                        await updateResolverGroup(editingGroup.resolver_group_id, {
+                          group_name: editGroupName.trim(),
+                          member_ids: editMemberIds,
+                          status: editGroupStatus,
+                        });
+                        await loadData();
+                        setEditingGroup(null);
+                      } catch {
+                        // ignore
+                      } finally {
+                        setSavingGroup(false);
+                      }
+                    }}
+                    className="rounded-lg bg-[#1F3D33] px-4 py-2 text-xs font-bold text-white hover:bg-[#2B5245] disabled:opacity-40"
+                  >
+                    {savingGroup ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

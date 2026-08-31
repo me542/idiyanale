@@ -1,4 +1,4 @@
-import { post, postForm } from "./ApiHelper";
+import { get, post, postForm, patch, del } from "./ApiHelper";
 import { ApiEndpoint } from "./ApiEndpoint";
 import {
   buildCreateTicketFormData,
@@ -49,6 +49,59 @@ export const ApiWrapper = {
     return postForm<TicketDTO>(ApiEndpoint.POST_CREATE_TICKET, formData, {
       unwrap: true,
     });
+  },
+
+  // Chat
+  createConversation(title: string, userIds: number[]) {
+    return post(ApiEndpoint.POST_CREATE_CONVERSATION, { title, user_ids: userIds });
+  },
+
+  getConversations() {
+    return get(ApiEndpoint.GET_CONVERSATIONS);
+  },
+
+  getConversationsWithUnread() {
+    return get(ApiEndpoint.GET_CONVERSATIONS_UNREAD);
+  },
+
+  getConversationById(conversationId: number | string) {
+    return get(ApiEndpoint.GET_CONVERSATION_BY_ID(conversationId));
+  },
+
+  deleteConversation(conversationId: number | string) {
+    return del(ApiEndpoint.DELETE_CONVERSATION(conversationId));
+  },
+
+  sendMessage(conversationId: number | string, content: string, messageType: string = 'text') {
+    return post(ApiEndpoint.POST_SEND_MESSAGE(conversationId), { content, message_type: messageType });
+  },
+
+  getMessages(conversationId: number | string, limit: number = 50, offset: number = 0) {
+    return get(ApiEndpoint.GET_MESSAGES(conversationId), { params: { limit, offset } });
+  },
+
+  editMessage(messageId: number | string, content: string) {
+    return patch(ApiEndpoint.PATCH_EDIT_MESSAGE(messageId), { content });
+  },
+
+  deleteMessage(messageId: number | string) {
+    return del(ApiEndpoint.DELETE_MESSAGE(messageId));
+  },
+
+  addParticipant(conversationId: number | string, userId: number) {
+    return post(ApiEndpoint.POST_ADD_PARTICIPANT(conversationId), { user_id: userId });
+  },
+
+  removeParticipant(conversationId: number | string, userId: number | string) {
+    return del(ApiEndpoint.DELETE_PARTICIPANT(conversationId, userId));
+  },
+
+  getParticipants(conversationId: number | string) {
+    return get(ApiEndpoint.GET_PARTICIPANTS(conversationId));
+  },
+
+  markAsRead(conversationId: number | string) {
+    return post(ApiEndpoint.POST_MARK_AS_READ(conversationId));
   },
 };
 

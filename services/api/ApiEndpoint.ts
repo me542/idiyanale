@@ -106,4 +106,22 @@ GET_SERVER_BY_ID: (serverId: number | string) => `/api/v1/project/get/server/${s
 GET_PROJECT_BY_ID: (projectId: number | string) => `/api/v1/project/get/project/${projectId}`, // was /get/${projectId}
 GET_SERVER: "/api/v1/project/get/servers",
 GET_PROJECT: (serverId: number | string) => `/api/v1/project/get/projects/${serverId}`,
+
+  // --------------------- CHAT ----------------------------
+  POST_CREATE_CONVERSATION: "/api/v1/chat/conversations",
+  GET_CONVERSATIONS: "/api/v1/chat/conversations",
+  GET_CONVERSATIONS_UNREAD: "/api/v1/chat/conversations/unread",
+  GET_CONVERSATION_BY_ID: (conversationId: number | string) => `/api/v1/chat/conversations/${conversationId}`,
+  DELETE_CONVERSATION: (conversationId: number | string) => `/api/v1/chat/conversations/${conversationId}`,
+
+  POST_SEND_MESSAGE: (conversationId: number | string) => `/api/v1/chat/conversations/${conversationId}/messages`,
+  GET_MESSAGES: (conversationId: number | string) => `/api/v1/chat/conversations/${conversationId}/messages`,
+
+  PATCH_EDIT_MESSAGE: (messageId: number | string) => `/api/v1/chat/messages/${messageId}`,
+  DELETE_MESSAGE: (messageId: number | string) => `/api/v1/chat/messages/${messageId}`,
+
+  POST_ADD_PARTICIPANT: (conversationId: number | string) => `/api/v1/chat/conversations/${conversationId}/participants`,
+  DELETE_PARTICIPANT: (conversationId: number | string, userId: number | string) => `/api/v1/chat/conversations/${conversationId}/participants/${userId}`,
+  GET_PARTICIPANTS: (conversationId: number | string) => `/api/v1/chat/conversations/${conversationId}/participants`,
+  POST_MARK_AS_READ: (conversationId: number | string) => `/api/v1/chat/conversations/${conversationId}/read`,
 };

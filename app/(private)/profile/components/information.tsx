@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, X, Check } from "lucide-react";
+import {
+  Pencil,
+  X,
+  Check,
+  IdCard,
+  User,
+  Mail,
+  Building2,
+  Briefcase,
+  ShieldCheck,
+} from "lucide-react";
 
 import type { NavKey } from "./profile-option";
 import { TicketKpi, type TicketKpiData } from "./ticket-kpi";
@@ -54,8 +64,7 @@ export function InformationPanel({
         setLoading(true);
         setError("");
 
-        const token =
-          localStorage.getItem("token")
+        const token = localStorage.getItem("token");
 
         if (!token) {
           setError("Authentication token not found.");
@@ -82,9 +91,7 @@ export function InformationPanel({
         console.log("Get User By ID Response:", result);
 
         if (!result.response) {
-          setError(
-            result.message || "Failed to get user information."
-          );
+          setError(result.message || "Failed to get user information.");
           return;
         }
 
@@ -97,17 +104,12 @@ export function InformationPanel({
           firstName: user.first_name || "",
           lastName: user.last_name || "",
           email: user.email || "",
-          institution:
-            user.institution?.institution_name || "",
-          position:
-            user.job_position?.job_position_name || "",
+          institution: user.institution?.institution_name || "",
+          position: user.job_position?.job_position_name || "",
           role: user.role?.role_name || "",
         });
       } catch (error) {
-        console.error(
-          "Failed to fetch user details:",
-          error
-        );
+        console.error("Failed to fetch user details:", error);
 
         setError("Failed to load user information.");
       } finally {
@@ -132,9 +134,7 @@ export function InformationPanel({
           </div>
         ) : error ? (
           <div className="flex min-h-[250px] items-center justify-center">
-            <p className="text-sm text-red-500">
-              {error}
-            </p>
+            <p className="text-sm text-red-500">{error}</p>
           </div>
         ) : (
           <WorkInformationView
@@ -173,10 +173,10 @@ function WorkInformationView({
   const [isEditing, setIsEditing] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const [formWork, setFormWork] =
-    useState<WorkInfo>(workInfo);
+  const [formWork, setFormWork] = useState<WorkInfo>(workInfo);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFormWork(workInfo);
   }, [workInfo]);
 
@@ -204,25 +204,36 @@ function WorkInformationView({
     setIsEditing(false);
   };
 
-  const updateWorkField = (
-    field: keyof WorkInfo,
-    value: string
-  ) => {
+  const updateWorkField = (field: keyof WorkInfo, value: string) => {
     setFormWork((prev) => ({
       ...prev,
       [field]: value,
     }));
   };
 
+  const initials = `${workInfo.firstName?.[0] ?? ""}${
+    workInfo.lastName?.[0] ?? ""
+  }`.toUpperCase();
+
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-800">
-          Work Information
-        </h2>
+      <div className="flex items-center justify-between border-b border-slate-100 pb-6">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-sm font-semibold text-emerald-700">
+            {initials || <User size={20} strokeWidth={1.75} />}
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">
+              Work Information
+            </h2>
+            <p className="text-sm text-slate-400">
+              {workInfo.position || "—"} · {workInfo.institution || "—"}
+            </p>
+          </div>
+        </div>
 
-        {/* 
+        {/*
         Enable this section if you want the edit functionality
         to be visible.
 
@@ -231,12 +242,9 @@ function WorkInformationView({
             type="button"
             onClick={handleEditClick}
             title="Edit information"
-            className="rounded-full p-1 text-emerald-600 transition-colors hover:bg-emerald-50"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 transition-colors hover:bg-emerald-50"
           >
-            <Pencil
-              size={18}
-              strokeWidth={1.75}
-            />
+            <Pencil size={17} strokeWidth={1.75} />
           </button>
         ) : (
           <div className="flex items-center gap-2">
@@ -244,24 +252,18 @@ function WorkInformationView({
               type="button"
               onClick={handleCancelEdit}
               title="Cancel"
-              className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100"
             >
-              <X
-                size={24}
-                strokeWidth={1.75}
-              />
+              <X size={19} strokeWidth={1.75} />
             </button>
 
             <button
               type="button"
               onClick={handleSave}
               title="Save"
-              className="rounded-full p-1 text-emerald-600 transition-colors hover:bg-emerald-50"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 transition-colors hover:bg-emerald-50"
             >
-              <Check
-                size={24}
-                strokeWidth={1.75}
-              />
+              <Check size={19} strokeWidth={1.75} />
             </button>
           </div>
         )}
@@ -269,77 +271,69 @@ function WorkInformationView({
       </div>
 
       {/* Information */}
-      <dl className="mt-7 space-y-5">
+      <dl className="mt-6 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
         <InfoRow
+          icon={IdCard}
           label="Staff ID"
           value={formWork.staffId}
           isEditing={isEditing}
-          onChange={(value) =>
-            updateWorkField("staffId", value)
-          }
+          onChange={(value) => updateWorkField("staffId", value)}
         />
 
         <InfoRow
-          label="First name"
-          value={formWork.firstName}
-          isEditing={isEditing}
-          onChange={(value) =>
-            updateWorkField("firstName", value)
-          }
-        />
-
-        <InfoRow
-          label="Last name"
-          value={formWork.lastName}
-          isEditing={isEditing}
-          onChange={(value) =>
-            updateWorkField("lastName", value)
-          }
-        />
-
-        <InfoRow
-          label="Email"
-          value={formWork.email}
-          isEditing={isEditing}
-          onChange={(value) =>
-            updateWorkField("email", value)
-          }
-        />
-
-        <InfoRow
-          label="Institution"
-          value={formWork.institution}
-          isEditing={isEditing}
-          onChange={(value) =>
-            updateWorkField("institution", value)
-          }
-        />
-
-        <InfoRow
-          label="Position"
-          value={formWork.position}
-          isEditing={isEditing}
-          onChange={(value) =>
-            updateWorkField("position", value)
-          }
-        />
-
-        <InfoRow
+          icon={ShieldCheck}
           label="Role"
           value={formWork.role}
           isEditing={isEditing}
-          onChange={(value) =>
-            updateWorkField("role", value)
-          }
+          pill
+          onChange={(value) => updateWorkField("role", value)}
+        />
+
+        <InfoRow
+          icon={User}
+          label="First name"
+          value={formWork.firstName}
+          isEditing={isEditing}
+          onChange={(value) => updateWorkField("firstName", value)}
+        />
+
+        <InfoRow
+          icon={User}
+          label="Last name"
+          value={formWork.lastName}
+          isEditing={isEditing}
+          onChange={(value) => updateWorkField("lastName", value)}
+        />
+
+        <InfoRow
+          icon={Mail}
+          label="Email"
+          value={formWork.email}
+          isEditing={isEditing}
+          className="sm:col-span-2"
+          onChange={(value) => updateWorkField("email", value)}
+        />
+
+        <InfoRow
+          icon={Building2}
+          label="Institution"
+          value={formWork.institution}
+          isEditing={isEditing}
+          onChange={(value) => updateWorkField("institution", value)}
+        />
+
+        <InfoRow
+          icon={Briefcase}
+          label="Position"
+          value={formWork.position}
+          isEditing={isEditing}
+          onChange={(value) => updateWorkField("position", value)}
         />
       </dl>
 
       {/* Confirmation Modal */}
       {showConfirm && (
-        <ConfirmEditModal
-          onConfirm={confirmEdit}
-          onCancel={cancelConfirm}
-        />
+        <ConfirmEditModal onConfirm={confirmEdit} onCancel={cancelConfirm} />
       )}
     </div>
   );
@@ -349,52 +343,50 @@ function WorkInformationView({
  * Information Row
  */
 function InfoRow({
+  icon: Icon,
   label,
   value,
   isEditing,
+  pill,
+  className = "",
   onChange,
 }: {
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
   label: string;
   value: string;
   isEditing?: boolean;
+  pill?: boolean;
+  className?: string;
   onChange?: (value: string) => void;
 }) {
-  /*
-   * Editing state
-   */
-  if (isEditing) {
-    return (
-      <div className="flex items-center gap-3 text-sm">
-        <dt className="w-28 shrink-0 font-semibold text-slate-400">
-          {label}:
-        </dt>
+  return (
+    <div className={`flex items-start gap-3 ${className}`}>
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
+        <Icon size={16} strokeWidth={1.75} />
+      </div>
 
-        <dd className="flex-1">
+      <div className="min-w-0 flex-1">
+        <dt className="text-xs font-medium text-slate-400">{label}</dt>
+
+        {isEditing ? (
           <input
             type="text"
             value={value}
-            onChange={(event) =>
-              onChange?.(event.target.value)
-            }
-            className="w-full max-w-xl rounded-md border border-slate-200 px-2.5 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+            onChange={(event) => onChange?.(event.target.value)}
+            className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm font-medium text-slate-700 outline-none transition focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
           />
-        </dd>
+        ) : pill && value ? (
+          <dd className="mt-1">
+            <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-sm font-medium text-emerald-700">
+              {value}
+            </span>
+          </dd>
+        ) : (
+          <dd className="mt-1 truncate text-sm font-medium text-slate-700">
+            {value || "—"}
+          </dd>
+        )}
       </div>
-    );
-  }
-
-  /*
-   * Normal state
-   */
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-      <dt className="w-28 shrink-0 font-semibold text-slate-400">
-        {label}:
-      </dt>
-
-      <dd className="font-medium text-slate-600">
-        {value || "—"}
-      </dd>
     </div>
   );
 }
@@ -417,8 +409,7 @@ function ConfirmEditModal({
         </h3>
 
         <p className="mt-2 text-sm text-slate-500">
-          You&apos;re about to edit this record. Do you want
-          to continue?
+          You&apos;re about to edit this record. Do you want to continue?
         </p>
 
         <div className="mt-6 flex justify-end gap-3">
