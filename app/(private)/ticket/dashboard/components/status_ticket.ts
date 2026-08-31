@@ -26,7 +26,7 @@ export const STATUS_MAP: Record<string, StatusBucket> = {
   forapproval: "forReview",
   approved: "forReview",
 
-  inProgress: "inProgress",
+  inprogress: "inProgress",
 
   resolved: "resolved",
 
