@@ -50,6 +50,7 @@ export const loginSuperAdmin = async (
 
   document.cookie = `token=${res.token}; path=/; max-age=${maxAge}; samesite=lax`;
   document.cookie = `role=super-admin; path=/; max-age=${maxAge}; samesite=lax`;
+  document.cookie = `user_role=${claims.role ?? "Super-Admin"}; path=/; max-age=${maxAge}; samesite=lax`;
 
   return res;
 };

@@ -59,6 +59,7 @@ export const SIDEBAR_MENU = [
 		id: "management",
 		label: "Management",
 		icon: BriefcaseBusiness,
+		roles: ["Insti-Admin"],
 		children: [
 			{ label: "Template", path: "/management/template" },
 			{ label: "User Management", path: "/management/user-management" },

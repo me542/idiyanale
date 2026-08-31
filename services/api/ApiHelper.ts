@@ -42,6 +42,7 @@ export function clearAuth() {
 
   document.cookie = "token=; path=/; max-age=0";
   document.cookie = "role=; path=/; max-age=0";
+  document.cookie = "user_role=; path=/; max-age=0";
 }
 
 let isRedirecting = false;

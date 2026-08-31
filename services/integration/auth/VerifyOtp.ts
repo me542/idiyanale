@@ -60,6 +60,7 @@ async function persistSession(token: string) {
 
   document.cookie = `token=${token}; path=/; max-age=${maxAge}; samesite=lax`;
   document.cookie = `role=staff; path=/; max-age=${maxAge}; samesite=lax`;
+  document.cookie = `user_role=${claims.role ?? ""}; path=/; max-age=${maxAge}; samesite=lax`;
 }
 
 export const verifyOTP = async (

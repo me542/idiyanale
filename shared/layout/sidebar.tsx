@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -10,7 +10,21 @@ import Footer from "./footer";
 export default function Sidebar() {
 	const [isExpanded, setIsExpanded] = useState(false);
 	const [openMenus, setOpenMenus] = useState<string[]>([]);
+	const [userRole, setUserRole] = useState<string | null>(null);
 	const pathname = usePathname();
+
+	useEffect(() => {
+		setUserRole(localStorage.getItem("role"));
+	}, []);
+
+	const filteredMenu = useMemo(() => {
+		return SIDEBAR_MENU.filter((item) => {
+			if (item.roles && item.roles.length > 0) {
+				return userRole && item.roles.includes(userRole);
+			}
+			return true;
+		});
+	}, [userRole]);
 
 	const toggleMenu = (id: string) => {
 		setOpenMenus((prev) =>
@@ -44,14 +58,14 @@ export default function Sidebar() {
 					className={`ml-3 transition-opacity duration-300 ${isExpanded ? "opacity-100" : "opacity-0 invisible"}`}
 				>
 					<span className="font-bold whitespace-nowrap bg-gradient-to-b from-[#E5CA7F] to-[#896C38] bg-clip-text text-transparent">
-					IDIYANALE
+						IDIYANALE
 					</span>
 				</div>
 			</div>
 
 			{/* Nav Section */}
 			<nav className="flex-1 px-4 mt-4 space-y-2 overflow-y-auto no-scrollbar">
-				{SIDEBAR_MENU.map((item) => {
+				{filteredMenu.map((item) => {
 					const isActive =
 						pathname === item.path ||
 						item.children?.some((c) => c.path === pathname);

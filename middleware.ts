@@ -27,6 +27,16 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get("token")?.value;
   const role = request.cookies.get("role")?.value; // "staff" | "super-admin"
   const authed = isValidToken(token);
+  const userRole = request.cookies.get("user_role")?.value;
+
+  // Block non-Insti-Admin staff from /management routes
+  if (
+    pathname.startsWith("/management") &&
+    role === "staff" &&
+    userRole !== "Insti-Admin"
+  ) {
+    return NextResponse.redirect(new URL("/ticket/dashboard", request.url));
+  }
 
   const isRoot = pathname === "/";
   const isProtected = PROTECTED_PATHS.some((path) => pathname.startsWith(path));
