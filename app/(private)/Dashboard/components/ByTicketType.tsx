@@ -9,7 +9,7 @@ interface Props {
   error?: string | null;
 }
 
-export default function ByCategory({
+export default function ByTicketType({
   categories = [],
   total = 0,
   loading = false,
@@ -23,16 +23,16 @@ export default function ByCategory({
   const hasData = categories.length > 0 && total > 0;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-md p-6">
+    <div>
       <div className="text-[15px] font-extrabold tracking-wide text-slate-800">
-        BY CATEGORY
+        BY TICKET TYPE
       </div>
 
-      <hr className="border-t border-slate-200 my-4 -mx-6" />
+      <hr className="border-t border-slate-200 my-4" />
 
       {loading ? (
         <div className="text-xs text-slate-500">
-          Loading categories…
+          Loading ticket types…
         </div>
       ) : error ? (
         <div className="text-xs text-red-500">
@@ -113,7 +113,7 @@ export default function ByCategory({
             </div>
           </div>
 
-          {/* Category legend */}
+          {/* Ticket type legend */}
           <div className="flex-1 min-w-[150px]">
             {hasData ? (
               <div className="space-y-2">
@@ -141,7 +141,7 @@ export default function ByCategory({
               </div>
             ) : (
               <div className="text-xs text-slate-500">
-                No category data to show yet.
+                No ticket type data to show yet.
               </div>
             )}
           </div>

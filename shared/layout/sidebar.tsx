@@ -14,6 +14,7 @@ export default function Sidebar() {
 	const pathname = usePathname();
 
 	useEffect(() => {
+		// eslint-disable-next-line react-hooks/set-state-in-effect
 		setUserRole(localStorage.getItem("role"));
 	}, []);
 

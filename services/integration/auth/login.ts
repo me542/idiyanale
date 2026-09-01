@@ -35,7 +35,7 @@ export const loginSuperAdmin = async (
 
   localStorage.setItem("token", res.token);
 
-  localStorage.setItem("role", claims.role ?? "Super-Admin");
+  localStorage.setItem("role", "Super-Admin");
 
   localStorage.setItem(
     "user",

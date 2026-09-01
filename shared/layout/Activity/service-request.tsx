@@ -22,8 +22,9 @@ import { getInstitutions, InstitutionResp } from "@/services/integration/institu
 import { getTicketTypes, TicketTypeResp } from "@/services/integration/insti-admin/get_all_ticket_type"; // adjust path to match your project
 import { verifyJWT } from "@/lib/auth/verify-jwt"; // adjust path to match your project
 
-// New: project lookup API
-import { getProjectByID, ProjectResponse } from "@/services/integration/project/get_project_id";
+// Project dropdown API
+import { getServers, ServerResponse as ServerRecord } from "@/services/integration/project/get_server";
+import { getProjectsByServerID, ProjectResponse } from "@/services/integration/project/get_project_by_server_id";
 
 export interface NewTicketFormData {
     resolver: string;
@@ -283,11 +284,10 @@ export default function NewTicketPanelView({
     const [institutionPoolLoading, setInstitutionPoolLoading] = useState(false);
 
     // ---------------------------------------------------------------------------
-    // Project lookup state (new)
+    // Project dropdown state — fetches projects for the user's institution
     // ---------------------------------------------------------------------------
-    const [project, setProject] = useState<ProjectResponse | null>(null);
+    const [projectOptions, setProjectOptions] = useState<SelectOption[]>([]);
     const [projectLoading, setProjectLoading] = useState(false);
-    const [projectError, setProjectError] = useState<string | null>(null);
 
     // ---------------------------------------------------------------
     // Rich-text editors (bold / italic / underline / etc.) for every
@@ -517,6 +517,64 @@ export default function NewTicketPanelView({
         };
     }, []);
 
+    // Fetch projects for the selected Institution Pool — different pools
+    // belong to different institutions, so each has its own set of projects.
+    useEffect(() => {
+        let cancel = false;
+
+        if (!form.approverPoolId) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setProjectOptions([]);
+            return;
+        }
+
+        const selectedPoolId = Number(form.approverPoolId);
+
+        const fetchProjects = async () => {
+            setProjectLoading(true);
+
+            try {
+                const servers = await getServers();
+                const poolServers = (servers ?? []).filter(
+                    (s: ServerRecord) => s.institution_id === selectedPoolId
+                );
+
+                const allProjects: SelectOption[] = [];
+                for (const server of poolServers) {
+                    try {
+                        const projects = await getProjectsByServerID(server.server_id);
+                        for (const p of projects ?? []) {
+                            allProjects.push({
+                                id: String(p.project_id),
+                                label: p.project_name,
+                            });
+                        }
+                    } catch {
+                        // skip failed server
+                    }
+                }
+
+                if (!cancel) {
+                    setProjectOptions(allProjects);
+                }
+            } catch (err) {
+                if (!cancel) {
+                    setError("Failed to load projects. Please try again.");
+                }
+            } finally {
+                if (!cancel) {
+                    setProjectLoading(false);
+                }
+            }
+        };
+
+        fetchProjects();
+
+        return () => {
+            cancel = true;
+        };
+    }, [form.approverPoolId]);
+
     // Once we know the institution, fetch its users and pull out endorsers
     // (role.can_endorse).
     useEffect(() => {
@@ -725,45 +783,50 @@ export default function NewTicketPanelView({
         }));
     };
 
-    // Institution Pool changed: clear the now-stale resolver selection,
-    // since resolver groups are scoped to the pool.
+    // Institution Pool changed: clear the now-stale resolver and project
+    // selections, since both are scoped to the pool.
     const handleInstitutionPoolChange = (value: string) => {
         setForm((prev) => ({
             ...prev,
             approverPoolId: value,
             resolver: "",
+            projectName: "",
         }));
     };
 
-    // Subcategory changed: pull subject/description/duration off the
-    // matching record so "Reload Template" has something to load.
+    // Subcategory changed: auto-fill subject, description, and duration
+    // from the template so the user sees the template data in real time.
     const handleSubcategoryChange = (value: string) => {
+        const selected = subcategoryDetails.find(
+            (sc) => String(sc.sub_category_id) === value
+        );
+
+        const nextDescription = selected?.description || "";
+        const nextSubject = selected?.subject_name || "";
+
+        // Push template values into the contentEditable editors directly.
+        if (descriptionRef.current) {
+            descriptionRef.current.innerHTML = nextDescription;
+        }
+        if (subjectRef.current) {
+            subjectRef.current.innerHTML = nextSubject;
+        }
+
+        setIsFieldEmpty((prev) => ({
+            ...prev,
+            description: nextDescription.trim().length === 0,
+            subject: nextSubject.trim().length === 0,
+        }));
+
         setForm((prev) => ({
             ...prev,
             subcategoryId: value,
+            subject: nextSubject,
+            description: nextDescription,
+            duration: selected?.has_duration
+                ? String(selected.duration_days)
+                : prev.duration,
         }));
-    };
-
-    // Project lookup (by project ID stored in form.projectName)
-    const lookupProject = async () => {
-        setProject(null);
-        setProjectError(null);
-
-        const raw = (form.projectName || "").trim();
-        if (!raw) {
-            setProjectError("Enter a project ID to look up.");
-            return;
-        }
-
-        setProjectLoading(true);
-        try {
-            const p = await getProjectByID(raw);
-            setProject(p);
-        } catch (err) {
-            setProjectError("Project not found or failed to load.");
-        } finally {
-            setProjectLoading(false);
-        }
     };
 
     const handleReloadTemplate = () => {
@@ -850,9 +913,7 @@ export default function NewTicketPanelView({
         setError(null);
         setSubcategoryOptions([]);
         setSubcategoryDetails([]);
-        setProject(null);
-        setProjectError(null);
-        setProjectLoading(false);
+        setProjectOptions([]);
 
         if (descriptionRef.current) {
             descriptionRef.current.innerHTML = "";
@@ -1043,90 +1104,18 @@ export default function NewTicketPanelView({
                             />
                         </div>
 
-                        {/* Project lookup: user enters a project ID and clicks Lookup */}
-                        <div className="border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
-                            <label className="block text-xs font-bold text-[#1E4637] mb-1">
-                                Project ID
-                            </label>
-
-                            <div className="flex gap-2 items-center">
-                                <input
-                                    type="text"
-                                    value={form.projectName}
-                                    onChange={(e) => {
-                                        updateField("projectName")(e.target.value);
-                                        // clear project preview when user edits the ID
-                                        setProject(null);
-                                        setProjectError(null);
-                                    }}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            lookupProject();
-                                        }
-                                    }}
-                                    placeholder="Enter project ID and click Lookup"
-                                    className="
-                                        flex-1
-                                        bg-transparent
-                                        border
-                                        border-gray-200
-                                        rounded-lg
-                                        px-2.5
-                                        py-1.5
-                                        text-sm
-                                        text-gray-700
-                                        focus:outline-none
-                                        focus:ring-2
-                                        focus:ring-[#1E4637]/30
-                                    "
-                                />
-
-                                <button
-                                    type="button"
-                                    onClick={lookupProject}
-                                    disabled={projectLoading}
-                                    className="
-                                        px-3
-                                        py-1.5
-                                        rounded-lg
-                                        font-semibold
-                                        text-sm
-                                        bg-[#1E4637]
-                                        text-white
-                                        hover:bg-[#16352A]
-                                        transition-colors
-                                        disabled:opacity-60
-                                    "
-                                >
-                                    {projectLoading ? "Looking up…" : "Lookup"}
-                                </button>
-                            </div>
-
-                            {projectError && (
-                                <div className="text-xs text-rose-500 mt-2">
-                                    {projectError}
-                                </div>
-                            )}
-
-                            {project && (
-                                <div className="mt-3 text-sm text-gray-700 space-y-1">
-                                    <div>
-                                        <span className="text-gray-400 font-semibold">Project Name:</span>
-                                        <span className="ml-1 font-semibold">{project.project_name}</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-400 font-semibold">Environment:</span>
-                                        <span className="ml-1">{project.environment}</span>
-                                    </div>
-                                    {project.description && (
-                                        <div className="text-gray-600 mt-1 whitespace-pre-wrap">
-                                            {project.description}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                        {/* Project dropdown — lists projects for the user's institution */}
+                        <SelectField
+                            label={
+                                projectLoading
+                                    ? "Project (loading...)"
+                                    : "Project"
+                            }
+                            value={form.projectName}
+                            onChange={updateField("projectName")}
+                            options={projectOptions}
+                            disabled={projectLoading}
+                        />
                     </div>
 
                     {/* =================================================
@@ -1240,12 +1229,36 @@ export default function NewTicketPanelView({
                             Request Details
                         </h3>
 
+                        
+
                         {/* Subject */}
                         <div className="mb-4">
                             <div className="flex items-center justify-between mb-1">
                                 <label className="block text-xs font-bold text-[#1E4637]">
                                     Subject:
                                 </label>
+
+                                <button
+                                    type="button"
+                                    onClick={handleReloadTemplate}
+                                    className="
+                                        flex
+                                        items-center
+                                        gap-1.5
+                                        bg-[#1E4637]
+                                        text-white
+                                        text-xs
+                                        font-semibold
+                                        px-3
+                                        py-1.5
+                                        rounded-full
+                                        hover:bg-[#16352A]
+                                        transition-colors
+                                    "
+                                >
+                                    <RefreshCw size={12} />
+                                    Reload Template
+                                </button>
                             </div>
 
                             <div
@@ -1344,28 +1357,6 @@ export default function NewTicketPanelView({
                                 <label className="block text-xs font-bold text-[#1E4637]">
                                     Description:
                                 </label>
-
-                                <button
-                                    type="button"
-                                    onClick={handleReloadTemplate}
-                                    className="
-                                        flex
-                                        items-center
-                                        gap-1.5
-                                        bg-[#1E4637]
-                                        text-white
-                                        text-xs
-                                        font-semibold
-                                        px-3
-                                        py-1.5
-                                        rounded-full
-                                        hover:bg-[#16352A]
-                                        transition-colors
-                                    "
-                                >
-                                    <RefreshCw size={12} />
-                                    Reload Template
-                                </button>
                             </div>
 
                             {/* Rich-text description editor — same bold / italic /

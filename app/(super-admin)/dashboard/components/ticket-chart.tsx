@@ -43,8 +43,12 @@ const LEGEND_ITEMS = [
   },
 ] as const;
 
-const TicketChart = () => {
-  const [data, setData] = useState<TicketData[]>([]);
+interface TicketChartProps {
+  filters?: { institution: string; ticketType: string };
+}
+
+const TicketChart = ({ filters }: TicketChartProps) => {
+  const [allData, setAllData] = useState<TicketData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,7 +63,7 @@ const TicketChart = () => {
           institutionResponse.response ?? [];
 
         if (institutions.length === 0) {
-          setData([]);
+          setAllData([]);
           return;
         }
 
@@ -135,14 +139,14 @@ const TicketChart = () => {
             }
           );
 
-        setData(chartData);
+        setAllData(chartData);
       } catch (error) {
         console.error(
           'Failed to load ticket chart:',
           error
         );
 
-        setData([]);
+        setAllData([]);
       } finally {
         setLoading(false);
       }
@@ -150,6 +154,22 @@ const TicketChart = () => {
 
     loadTicketData();
   }, []);
+
+  // Apply filters
+  const data = allData.filter((row) => {
+    // Filter by institution
+    if (filters?.institution && filters.institution !== 'ALL') {
+      if (row.name !== filters.institution) return false;
+    }
+    // Filter by ticket type
+    if (filters?.ticketType && filters.ticketType !== 'ALL') {
+      const type = filters.ticketType.toLowerCase();
+      if (type === 'service request' && row.serviceRequest === 0) return false;
+      if ((type === 'changed request' || type === 'change request') && row.changedRequest === 0) return false;
+      if ((type === 'incident report' || type === 'incident') && row.incidentReport === 0) return false;
+    }
+    return true;
+  });
 
   const hasData = data.length > 0;
 

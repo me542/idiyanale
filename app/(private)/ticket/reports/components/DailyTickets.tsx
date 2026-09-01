@@ -25,12 +25,17 @@ export default function DailyTickets({
     useState<DailyTicketPoint[]>(initialData);
 
   const [loading, setLoading] = useState(true);
-
   const [error, setError] = useState<string | null>(null);
 
   const width = 760;
   const height = 220;
-  const padding = 24;
+
+  const padding = {
+    top: 20,
+    right: 24,
+    bottom: 32,
+    left: 40,
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -40,7 +45,6 @@ export default function DailyTickets({
         setLoading(true);
         setError(null);
 
-        // Get JWT token from localStorage
         const token =
           localStorage.getItem("token") ||
           localStorage.getItem("access_token");
@@ -49,7 +53,6 @@ export default function DailyTickets({
           throw new Error("Authentication token not found");
         }
 
-        // Verify JWT and get institution_id
         const payload = await verifyJWT(token);
 
         if (!payload) {
@@ -64,11 +67,9 @@ export default function DailyTickets({
           );
         }
 
-        // Get all tickets for the authenticated institution
         const tickets =
           await getAllTicketsByInstitution(institutionId);
 
-        // Convert tickets into daily totals
         const dailyData = groupTicketsByDay(tickets);
 
         if (mounted) {
@@ -103,35 +104,28 @@ export default function DailyTickets({
 
   const hasData = data.length > 0;
 
-  const max = hasData
+  const maxValue = hasData
     ? Math.max(...data.map((item) => item.value))
     : 0;
 
-  const min = hasData
-    ? Math.min(...data.map((item) => item.value))
+  // Give the chart a little headroom above the highest bar.
+  const chartMax = Math.max(maxValue, 1);
+
+  const chartWidth =
+    width - padding.left - padding.right;
+
+  const chartHeight =
+    height - padding.top - padding.bottom;
+
+  const barGap = 12;
+
+  const barWidth = hasData
+    ? Math.max(
+        8,
+        (chartWidth - barGap * (data.length - 1)) /
+          data.length
+      )
     : 0;
-
-  const range = max - min || 1;
-
-  const points = hasData
-    ? data.map((item, index) => {
-        const x =
-          padding +
-          (index / Math.max(data.length - 1, 1)) *
-            (width - padding * 2);
-
-        const y =
-          height -
-          padding -
-          ((item.value - min) / range) *
-            (height - padding * 2);
-
-        return {
-          x,
-          y,
-        };
-      })
-    : [];
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-md">
@@ -162,7 +156,7 @@ export default function DailyTickets({
         </div>
       )}
 
-      {/* Chart */}
+      {/* Bar Chart */}
       {!loading && !error && hasData && (
         <div className="w-full">
           <svg
@@ -172,80 +166,99 @@ export default function DailyTickets({
           >
             {/* Y Axis */}
             <line
-              x1={padding}
-              y1={padding - 8}
-              x2={padding}
-              y2={height - padding}
+              x1={padding.left}
+              y1={padding.top}
+              x2={padding.left}
+              y2={height - padding.bottom}
               stroke="#94a3b8"
               strokeWidth="1.5"
             />
 
             {/* X Axis */}
             <line
-              x1={padding}
-              y1={height - padding}
-              x2={width - padding + 8}
-              y2={height - padding}
+              x1={padding.left}
+              y1={height - padding.bottom}
+              x2={width - padding.right}
+              y2={height - padding.bottom}
               stroke="#94a3b8"
               strokeWidth="1.5"
             />
 
-            {/* Chart Line */}
-            <polyline
-              points={points
-                .map((point) => `${point.x},${point.y}`)
-                .join(" ")}
-              fill="none"
-              stroke="#1e293b"
-              strokeWidth="1.75"
-            />
-
-            {/* Data Points */}
-            {points.map((point, index) => (
-              <circle
-                key={`${data[index].label}-${index}`}
-                cx={point.x}
-                cy={point.y}
-                r="3"
-                fill="#1e293b"
-              />
-            ))}
-
-            {/* X Axis Labels */}
-            {points.map((point, index) => (
-              <text
-                key={`label-${data[index].label}-${index}`}
-                x={point.x}
-                y={height - 5}
-                textAnchor="middle"
-                fontSize="10"
-                fill="#64748b"
-              >
-                {data[index].label}
-              </text>
-            ))}
-
             {/* Y Axis Maximum */}
             <text
-              x={padding - 5}
-              y={padding}
+              x={padding.left - 8}
+              y={padding.top + 4}
               textAnchor="end"
               fontSize="10"
               fill="#64748b"
             >
-              {max}
+              {maxValue}
             </text>
 
             {/* Y Axis Minimum */}
             <text
-              x={padding - 5}
-              y={height - padding}
+              x={padding.left - 8}
+              y={height - padding.bottom + 4}
               textAnchor="end"
               fontSize="10"
               fill="#64748b"
             >
-              {min}
+              0
             </text>
+
+            {/* Bars */}
+            {data.map((item, index) => {
+              const barHeight =
+                (item.value / chartMax) * chartHeight;
+
+              const x =
+                padding.left +
+                index *
+                  (barWidth + barGap);
+
+              const y =
+                height -
+                padding.bottom -
+                barHeight;
+
+              return (
+                <g
+                  key={`${item.label}-${index}`}
+                >
+                  {/* Bar */}
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barWidth}
+                    height={barHeight}
+                    rx="4"
+                    fill="#1e293b"
+                  />
+
+                  {/* Value */}
+                  <text
+                    x={x + barWidth / 2}
+                    y={y - 6}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill="#475569"
+                  >
+                    {item.value}
+                  </text>
+
+                  {/* X Axis Label */}
+                  <text
+                    x={x + barWidth / 2}
+                    y={height - 8}
+                    textAnchor="middle"
+                    fontSize="10"
+                    fill="#64748b"
+                  >
+                    {item.label}
+                  </text>
+                </g>
+              );
+            })}
           </svg>
         </div>
       )}
@@ -286,16 +299,19 @@ function groupTicketsByDay(
       return;
     }
 
-    // Use YYYY-MM-DD as the internal grouping key.
     const dateKey = [
       date.getFullYear(),
       String(date.getMonth() + 1).padStart(2, "0"),
       String(date.getDate()).padStart(2, "0"),
     ].join("-");
 
-    const currentCount = grouped.get(dateKey) ?? 0;
+    const currentCount =
+      grouped.get(dateKey) ?? 0;
 
-    grouped.set(dateKey, currentCount + 1);
+    grouped.set(
+      dateKey,
+      currentCount + 1
+    );
   });
 
   return Array.from(grouped.entries())
@@ -314,10 +330,13 @@ function groupTicketsByDay(
       );
 
       return {
-        label: date.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
+        label: date.toLocaleDateString(
+          "en-US",
+          {
+            month: "short",
+            day: "numeric",
+          }
+        ),
         value,
       };
     });

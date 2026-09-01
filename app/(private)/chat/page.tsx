@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   Users, Plus, Send, Paperclip, X, FileText, Trash2, Edit2, 
   Check, CheckCheck, MessageSquare, Search, SmilePlus, 
@@ -312,7 +313,7 @@ function ConversationRow({
     <button
       onClick={onSelect}
       className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left
-        transition-colors ${
+        transition-colors group ${
           isSelected
             ? "border-emerald-400 bg-white shadow-sm"
             : "border-gray-200 bg-white hover:border-gray-300"
@@ -637,16 +638,18 @@ function CreateConversationModal({
   users,
   institutions,
   currentUser,
+  conversations,
 }: {
   onClose: () => void;
   onCreate: (title: string, userIds: number[], groupType: string, institutionId?: number) => void;
   users: User[];
   institutions: Institution[];
   currentUser: User | null;
+  conversations: Conversation[];
 }) {
   const [title, setTitle] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
-  const [groupType, setGroupType] = useState("custom");
+  const [groupType, setGroupType] = useState("dm");
   const [selectedInstitution, setSelectedInstitution] = useState<number | null>(null);
   const [userSearch, setUserSearch] = useState("");
 
@@ -656,6 +659,17 @@ function CreateConversationModal({
     const emailMatch = user.email.toLowerCase().includes(searchLower);
     return nameMatch || emailMatch;
   });
+
+  // "Everyone" is a single shared group - don't let people spawn duplicates of it
+  const existingEveryoneGroup = conversations.find((c) => c.group_type === "everyone");
+
+  // Every institution has exactly one group - map institution_id -> existing conversation
+  const instiGroupMap = new Map<number, Conversation>(
+    conversations
+      .filter((c) => c.group_type === "insti" && c.institution_id)
+      .map((c) => [c.institution_id, c])
+  );
+  const existingInstiGroup = selectedInstitution ? instiGroupMap.get(selectedInstitution) : undefined;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -691,6 +705,13 @@ function CreateConversationModal({
     if (groupType === "insti") return selectedInstitution !== null;
     if (groupType === "custom") return title.trim() && selectedUsers.length > 0;
     return false;
+  };
+
+  const submitLabel = () => {
+    if (groupType === "dm") return "Start Conversation";
+    if (groupType === "everyone") return existingEveryoneGroup ? "Go to Everyone" : "Create Everyone Group";
+    if (groupType === "insti") return existingInstiGroup ? "Go to Group" : "Create Institution Group";
+    return "Create Conversation";
   };
 
   return (
@@ -753,10 +774,10 @@ function CreateConversationModal({
 
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select a person to message
+                Search for a person to message
               </label>
               
-              {/* Search input */}
+              {/* Search input - searches the user list, not conversations */}
               <div className="relative mb-3">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
@@ -766,42 +787,53 @@ function CreateConversationModal({
                   placeholder="Search by name or email..."
                   className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg 
                     focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+                  autoFocus
                 />
               </div>
 
-              {/* User list - single select */}
+              {/* User list - single select, this always produces a "dm", never a group */}
               <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
-                {filteredUsers.length > 0 ? (
-                  filteredUsers.filter(u => u.id !== currentUser?.id).map((user) => (
-                    <button
-                      key={user.id}
-                      type="button"
-                      onClick={() => setSelectedUsers([user.id])}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${
-                        selectedUsers.includes(user.id) ? "bg-emerald-50" : ""
-                      }`}
-                    >
-                      <UserAvatar 
-                        firstName={user.first_name} 
-                        lastName={user.last_name} 
-                        size="md" 
-                        isOnline={user.is_online}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">
-                          {user.first_name} {user.last_name}
-                        </p>
-                        <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                      </div>
-                      {selectedUsers.includes(user.id) && (
-                        <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
+                {filteredUsers.filter(u => u.id !== currentUser?.id).length > 0 ? (
+                  filteredUsers.filter(u => u.id !== currentUser?.id).map((user) => {
+                    const existingDm = conversations.find(
+                      (c) => c.group_type === "dm" && c.title === `${user.first_name} ${user.last_name}`
+                    );
+                    return (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => setSelectedUsers([user.id])}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${
+                          selectedUsers.includes(user.id) ? "bg-emerald-50" : ""
+                        }`}
+                      >
+                        <UserAvatar 
+                          firstName={user.first_name} 
+                          lastName={user.last_name} 
+                          size="md" 
+                          isOnline={user.is_online}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">
+                            {user.first_name} {user.last_name}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">{user.email}</p>
                         </div>
-                      )}
-                    </button>
-                  ))
+                        {existingDm && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-600 rounded-full">
+                            Existing chat
+                          </span>
+                        )}
+                        {selectedUsers.includes(user.id) && (
+                          <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })
                 ) : (
                   <p className="text-sm text-gray-400 text-center py-4">No users found</p>
                 )}
@@ -819,7 +851,11 @@ function CreateConversationModal({
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">Everyone</p>
-                  <p className="text-sm text-gray-500">All {users.length} users will be added to this conversation</p>
+                  {existingEveryoneGroup ? (
+                    <p className="text-sm text-gray-500">This group already exists — you'll be taken straight to it.</p>
+                  ) : (
+                    <p className="text-sm text-gray-500">All {users.length} users will be added to this conversation</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -834,6 +870,7 @@ function CreateConversationModal({
               <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
                 {institutions.map((inst) => {
                   const instUsers = users.filter(u => u.institution_id === inst.institution_id);
+                  const hasExistingGroup = instiGroupMap.has(inst.institution_id);
                   return (
                     <button
                       key={inst.institution_id}
@@ -850,6 +887,11 @@ function CreateConversationModal({
                         <p className="text-sm font-medium text-gray-900">{inst.institution_name}</p>
                         <p className="text-xs text-gray-500">{instUsers.length} users</p>
                       </div>
+                      {hasExistingGroup && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded-full">
+                          Existing group
+                        </span>
+                      )}
                       {selectedInstitution === inst.institution_id && (
                         <div className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center">
                           <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -861,6 +903,11 @@ function CreateConversationModal({
                   );
                 })}
               </div>
+              {existingInstiGroup && (
+                <p className="text-xs text-gray-400 mt-2">
+                  This institution already has a group — you'll be taken straight to it.
+                </p>
+              )}
             </div>
           )}
 
@@ -979,7 +1026,7 @@ function CreateConversationModal({
               disabled={!canSubmit()}
               className="px-4 py-2 text-sm font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors disabled:bg-gray-200 disabled:text-gray-400"
             >
-              Create Conversation
+              {submitLabel()}
             </button>
           </div>
         </form>
@@ -988,7 +1035,9 @@ function CreateConversationModal({
   );
 }
 
-export default function ChatPage() {
+import { Suspense } from "react";
+
+function ChatPageInner() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1010,6 +1059,7 @@ export default function ChatPage() {
   const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchParams = useSearchParams();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1106,6 +1156,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (selectedId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchMessages(selectedId);
       setMessageSearchQuery("");
       setShowMessageSearch(false);
@@ -1113,18 +1164,74 @@ export default function ChatPage() {
     }
   }, [selectedId, fetchMessages]);
 
+  // Auto-select conversation from URL search param (e.g. /chat?conversation=123)
+  useEffect(() => {
+    const convParam = searchParams.get("conversation");
+    if (convParam && conversations.length > 0) {
+      const convId = Number(convParam);
+      if (!isNaN(convId) && conversations.some(c => c.conversation_id === convId)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setSelectedId(convId);
+      }
+    }
+  }, [searchParams, conversations]);
+
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
   const handleCreateConversation = async (title: string, userIds: number[], groupType: string, institutionId?: number) => {
     try {
-      await ApiWrapper.createConversation(title, userIds);
+      // "Everyone" is a single shared group - reuse it instead of making a duplicate
+      if (groupType === "everyone") {
+        const existing = conversations.find((c) => c.group_type === "everyone");
+        if (existing) {
+          setSelectedId(existing.conversation_id);
+          setShowCreateModal(false);
+          return;
+        }
+      }
+
+      // Each institution already has one group - reuse it instead of making a duplicate
+      if (groupType === "insti" && institutionId) {
+        const existing = conversations.find(
+          (c) => c.group_type === "insti" && c.institution_id === institutionId
+        );
+        if (existing) {
+          setSelectedId(existing.conversation_id);
+          setShowCreateModal(false);
+          return;
+        }
+      }
+
+      // A DM with this same person already exists - open it instead of duplicating
+      if (groupType === "dm") {
+        const existing = conversations.find((c) => c.group_type === "dm" && c.title === title);
+        if (existing) {
+          setSelectedId(existing.conversation_id);
+          setShowCreateModal(false);
+          return;
+        }
+      }
+
+      await ApiWrapper.createConversation(title, userIds, groupType, institutionId);
       setShowCreateModal(false);
       await fetchConversations();
     } catch (error) {
       console.error("Failed to create conversation:", error);
     }
+  };
+
+  const handleStartDirectMessage = async (user: User) => {
+    const dmTitle = `${user.first_name} ${user.last_name}`;
+    const existing = conversations.find((c) => c.group_type === "dm" && c.title === dmTitle);
+    if (existing) {
+      setSelectedId(existing.conversation_id);
+      setSidebarSearch("");
+      return;
+    }
+    await handleCreateConversation(dmTitle, [currentUser?.id || 0, user.id], "dm");
+    setSidebarSearch("");
   };
 
   const handleDeleteConversation = async (conversationId: number) => {
@@ -1313,6 +1420,19 @@ export default function ChatPage() {
       )
     : conversations;
 
+  // The sidebar search bar also searches people, not just existing conversation titles,
+  // so you can find someone and start a direct message with them.
+  const matchedUsers = sidebarSearch
+    ? users.filter((user) => {
+        if (user.id === currentUser?.id) return false;
+        const q = sidebarSearch.toLowerCase();
+        return (
+          `${user.first_name} ${user.last_name}`.toLowerCase().includes(q) ||
+          user.email.toLowerCase().includes(q)
+        );
+      })
+    : [];
+
   const selectedConversation = conversations.find((c) => c.conversation_id === selectedId);
 
   const getSender = (senderId: number) => users.find(u => u.id === senderId);
@@ -1341,6 +1461,7 @@ export default function ChatPage() {
           users={users}
           institutions={institutions}
           currentUser={currentUser}
+          conversations={conversations}
         />
       )}
 
@@ -1359,75 +1480,64 @@ export default function ChatPage() {
             </button>
           </div>
           
-          {/* Search bar */}
+          {/* Search bar - searches conversations AND people */}
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               value={sidebarSearch}
               onChange={(e) => setSidebarSearch(e.target.value)}
-              placeholder="Search conversations or users..."
+              placeholder="Search conversations or people..."
               className="w-full pl-9 pr-4 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl 
                 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:bg-white"
             />
           </div>
         </div>
 
-        {/* Quick Access Groups */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <p className="text-xs font-medium text-gray-400 uppercase mb-2">Quick Access</p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-            >
-              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
-                <Globe size={14} className="text-white" />
-              </div>
-              <span className="text-xs font-medium text-blue-700">Everyone</span>
-            </button>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
-            >
-              <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center">
-                <Building2 size={14} className="text-white" />
-              </div>
-              <span className="text-xs font-medium text-purple-700">Insti</span>
-            </button>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-            >
-              <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center">
-                <UserPlus size={14} className="text-white" />
-              </div>
-              <span className="text-xs font-medium text-gray-700">Custom</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Online Users */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <p className="text-xs font-medium text-gray-400 uppercase mb-2">
-            Online Now ({users.filter(u => u.is_online).length})
-          </p>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {users.filter(u => u.is_online).slice(0, 8).map((user) => (
-              <div key={user.id} className="flex flex-col items-center gap-1 min-w-[48px]">
-                <UserAvatar firstName={user.first_name} lastName={user.last_name} size="sm" isOnline={true} />
-                <span className="text-[10px] text-gray-500 truncate w-full text-center">
-                  {user.first_name}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Conversation List */}
+        {/* Conversation + People List */}
         <div className="flex-1 overflow-y-auto p-2">
+          {/* People matches - tapping one opens/starts a direct message, never a group */}
+          {sidebarSearch && matchedUsers.length > 0 && (
+            <div className="mb-2">
+              <p className="text-xs font-medium text-gray-400 uppercase px-2 py-1">People</p>
+              <div className="flex flex-col gap-1">
+                {matchedUsers.map((user) => {
+                  const existingDm = conversations.find(
+                    (c) => c.group_type === "dm" && c.title === `${user.first_name} ${user.last_name}`
+                  );
+                  return (
+                    <button
+                      key={user.id}
+                      onClick={() => handleStartDirectMessage(user)}
+                      className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left hover:border-gray-300 transition-colors"
+                    >
+                      <UserAvatar
+                        firstName={user.first_name}
+                        lastName={user.last_name}
+                        size="md"
+                        isOnline={user.is_online}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm text-gray-900 truncate">
+                          {user.first_name} {user.last_name}
+                        </p>
+                        <p className="text-xs text-gray-400 truncate mt-0.5">{user.email}</p>
+                      </div>
+                      <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-600 rounded-full shrink-0">
+                        {existingDm ? "Open chat" : "Message"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {filteredConversations.length > 0 ? (
             <div className="flex flex-col gap-1">
+              {sidebarSearch && matchedUsers.length > 0 && (
+                <p className="text-xs font-medium text-gray-400 uppercase px-2 py-1">Conversations</p>
+              )}
               {filteredConversations.map((conversation) => (
                 <ConversationRow
                   key={conversation.conversation_id}
@@ -1440,7 +1550,7 @@ export default function ChatPage() {
                 />
               ))}
             </div>
-          ) : (
+          ) : matchedUsers.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 py-8">
               <MessageSquare size={40} className="mb-3 text-gray-300" />
               <p className="text-sm font-medium">No conversations yet</p>
@@ -1453,7 +1563,7 @@ export default function ChatPage() {
                 New Conversation
               </button>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -1691,5 +1801,13 @@ export default function ChatPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex h-full w-full items-center justify-center bg-slate-50"><div className="text-gray-400">Loading...</div></div>}>
+      <ChatPageInner />
+    </Suspense>
   );
 }

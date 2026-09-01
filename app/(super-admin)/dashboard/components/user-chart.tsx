@@ -29,8 +29,12 @@ const COLORS = [
 
 const BAR_COLUMN_WIDTH = 96;
 
-const UserChart = () => {
-  const [data, setData] = useState<DataPoint[]>([]);
+interface UserChartProps {
+  filters?: { institution: string; ticketType: string };
+}
+
+const UserChart = ({ filters }: UserChartProps) => {
+  const [allData, setAllData] = useState<DataPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,7 +80,7 @@ const UserChart = () => {
           })
         );
 
-        setData(chartData);
+        setAllData(chartData);
       } catch (err) {
         console.error(
           "Failed to load user/institution data:",
@@ -91,6 +95,14 @@ const UserChart = () => {
 
     fetchData();
   }, []);
+
+  // Apply institution filter
+  const data = allData.filter((item) => {
+    if (filters?.institution && filters.institution !== "ALL") {
+      return item.label === filters.institution;
+    }
+    return true;
+  });
 
   /*
    * Generate a clean maximum for the chart.

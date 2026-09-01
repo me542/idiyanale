@@ -10,15 +10,6 @@ import {
   type WorkInfo,
 } from "./components/information";
 
-const workInfo: WorkInfo = {
-  staffId: "",
-  firstName: "",
-  lastName: "",
-  email: "",
-  institution: "",
-  position: "",
-  role: "",
-};
 
 const kpi = {
   staffId: "",

@@ -9,12 +9,15 @@ import { InstitutionTicket, TicketUser } from "@/services/integration/ticket/get
 import { getTicketRemarks, TicketRemark } from "@/services/integration/remark/get_ticket_remarks";
 import { postTicketRemark } from "@/services/integration/remark/post_ticket_remark";
 import { getInstitutionResolverGroups } from "@/services/integration/institution/get-insti-by-id-resolver-group";
+import { getUsersByInstitution, UserDetails } from "@/services/integration/super_admin/get_user_insti_id";
 // NOTE: adjust this path to wherever processTicket actually lives in your
 // services folder — guessed to match the other integration/ticket imports.
 import { processTicket, TicketProcessAction } from "@/services/integration/ticket/post_ticket_process";
 import { getTicketAttachments, deleteTicketAttachment, TicketAttachment as TicketAttachmentFile } from "@/services/integration/ticket/get_ticket_attachments";
 import { post } from "@/services/api/ApiHelper";
 import { ApiEndpoint } from "@/services/api/ApiEndpoint";
+import { getSubCategoryByID } from "@/services/integration/insti-admin/get_sub_category_id";
+import { getProjectByID } from "@/services/integration/project/get_project_id";
 
 // ---------------------------------------------------------------------------
 // Local-user helpers — reads from localStorage set by VerifyOtp.ts at login.
@@ -78,16 +81,6 @@ function getLocalUserFull(): LocalUser {
 }
 
 // Read the logged-in user's display info from the JWT claims stored at login.
-function getLocalUser(): { label: string; initials: string } {
-    if (typeof window === "undefined") return { label: "Me", initials: "?" };
-    try {
-        const raw = localStorage.getItem("user");
-        const u = raw ? JSON.parse(raw) : null;
-        if (u?.staffId) return { label: String(u.staffId), initials: String(u.staffId).slice(0, 2).toUpperCase() };
-    } catch { /* ignore */ }
-    const role = localStorage.getItem("role") ?? "Me";
-    return { label: role, initials: role.slice(0, 2).toUpperCase() };
-}
 
 interface ApprovalStep {
     id: string;
@@ -101,6 +94,9 @@ interface ApprovalStep {
      * action-button pair renders (ACCEPT/REJECT vs RESOLVED/HOLD vs
      * REJECT/RESUME) and whether the avatar shows initials or is blank. */
     resolverPhase?: "for_review" | "in_progress" | "on_hold" | "resolved";
+    /** Set when the ticket was cancelled — marks this step as the stop point. */
+    cancelled?: boolean;
+    cancelTimestamp?: string;
 }
 
 interface TicketDetailPanelProps {
@@ -200,11 +196,30 @@ function getCompletedSteps(status: string): number {
         case "for endorsement":
             return 1;
         case "cancel":
-        case "cancel":
+        case "canceled":
             return 0;
         default:
             return 0;
     }
+}
+
+// Returns the 0-based index of the PROGRESS_STEP where the ticket was
+// stopped (cancelled or rejected). Returns -1 when the ticket is not in
+// a terminal stopped state.
+//
+// We infer the stop-point from the timestamps that are already set:
+//   Submitter (0)  → cancel but no endorsed_at
+//   Endorser (1)   → endorsed_at but no approved_at
+//   Approver (2)   → approved_at but no resolver_id / started_at
+//   Assigned (3)   → resolver_id set but not resolved
+//   Resolved (4)   → resolved_at set (shouldn't happen for cancel)
+function getStopStep(ticket: InstitutionTicket): number {
+    const status = ticket.status?.toLowerCase().trim();
+    if (status !== "cancel" && status !== "canceled") return -1;
+
+    if (ticket.endorsed_at && ticket.approved_at) return 3; // stopped at Assigned
+    if (ticket.endorsed_at) return 2;                       // stopped at Approver
+    return 1;                                               // stopped at Endorser
 }
 
 // Determines which of the 4 resolver sub-states to show. Prefers an explicit
@@ -359,6 +374,21 @@ function approvalChainFromTicket(ticket: InstitutionTicket, completedSteps: numb
         });
     }
 
+    // If the ticket was cancelled, mark the last step that was active
+    // before cancellation as the stop point.
+    const status = ticket.status?.toLowerCase().trim();
+    if ((status === "cancel" || status === "canceled") && steps.length > 0) {
+        const stopIdx = getStopStep(ticket);
+        // Map stopStep index (0-based in PROGRESS_STEPS) to approvalChain index.
+        // Submit=0→step 0, Endorse=1→step 1, Approve=2→step 2, Assign=3→step 3
+        const chainIdx = Math.min(stopIdx, steps.length - 1);
+        if (chainIdx >= 0 && steps[chainIdx]) {
+            steps[chainIdx].cancelled = true;
+            steps[chainIdx].status = "CANCELLED";             steps[chainIdx].cancelTimestamp = formatDate(ticket.cancelled_at);
+            steps[chainIdx].pending = false;
+        }
+    }
+
     return steps;
 }
 
@@ -376,7 +406,6 @@ export default function TicketDetailPanel({
     onRejectStep,
     onHoldStep,
     onResumeStep,
-    onReassignStep,
     onCancelTicket,
     onTicketUpdated,
 }: TicketDetailPanelProps) {
@@ -425,12 +454,21 @@ export default function TicketDetailPanel({
     const [attachmentsLoading, setAttachmentsLoading] = useState(false);
     const [uploadingAttachments, setUploadingAttachments] = useState(false);
 
+    // Subcategory template data — subject_name & description from the template system.
+    const [subCategoryTemplate, setSubCategoryTemplate] = useState<{ subject_name: string; description: string } | null>(null);
+
+    // Project name — fetched by project_id so we can show the name instead of the raw ID.
+    const [projectName, setProjectName] = useState<string | null>(null);
+
     // ---------------------------------------------------------------------------
     // Role-based permission state for approval-chain action buttons.
     // ---------------------------------------------------------------------------
 
     // Whether the logged-in user is a member of the ticket's resolver group.
     const [isResolverGroupMember, setIsResolverGroupMember] = useState(false);
+
+    // Resolver group members with can_resolve — populated for the reassign dropdown.
+    const [resolverGroupMembers, setResolverGroupMembers] = useState<UserDetails[]>([]);
 
     // Confirmation dialog — set to describe the pending action, null when closed.
     // `kind: "reassign"` additionally shows a target-user-id input in the dialog.
@@ -446,7 +484,7 @@ export default function TicketDetailPanel({
 
     // Draft value for the "reassign to" input, only relevant while the
     // reassign dialog is open.
-    const [reassignTarget, setReassignTarget] = useState("");
+    const [reassignTarget, setReassignTarget] = useState<number | "">("");
 
     // Draft value for the "resolution" textarea, only relevant while the
     // resolve confirm dialog is open.
@@ -463,16 +501,13 @@ export default function TicketDetailPanel({
     // Read the full local user once (it won't change while this panel is open).
     const localUser = getLocalUserFull();
 
-    // canCancel — only the person who submitted the ticket, and only while it
-    // hasn't reached a resolved/closed state.
-    // ASSUMPTION: "cancellable" = anything before Resolved/Closed on the
-    // progress bar. Adjust the completedSteps cutoff if cancellation should
-    // stop earlier (e.g. once a resolver has started work).
+    // canCancel — only the person who submitted the ticket, and only while
+    // the ticket has NOT been endorsed yet (before the endorser step).
     const canCancel =
         localUser.id !== null &&
         userId(ticket?.submitter) === localUser.id &&
         ticket?.status?.toLowerCase().trim() !== "cancel" &&
-        (ticket ? getCompletedSteps(ticket.status) : 0) < 5;
+        (ticket ? getCompletedSteps(ticket.status) : 0) < 2;
 
     // canEndorse — the endorser is pre-assigned on the ticket; that user must
     // also have the role's can_endorse permission before they can act.
@@ -496,10 +531,9 @@ export default function TicketDetailPanel({
     const canResolve =
         isResolverGroupMember && localUser.permissions.can_resolve;
 
-    // canReassignResolver — ASSUMPTION: reassigning the resolver is an
-    // approver-level action (moving work to a different resolver group/
-    // person), not something the current resolver does to themselves.
-    const canReassignResolver = canApprove;
+    // canReassignResolver — resolver group members with can_resolve can
+    // reassign while the ticket is still in for_review (not yet grabbed).
+    const canReassignResolver = canResolve;
 
     // Fetch the resolver groups for this ticket's institution and check
     // if the logged-in user is in any active group.
@@ -508,24 +542,50 @@ export default function TicketDetailPanel({
         if (!institutionId || localUser.id === null) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setIsResolverGroupMember(false);
+            setResolverGroupMembers([]);
             return;
         }
 
         let cancel = false;
 
-        getInstitutionResolverGroups(institutionId)
-            .then((res) => {
+        // Fetch resolver groups and all institution users in parallel,
+        // then cross-reference to build the list of resolvers.
+        Promise.all([
+            getInstitutionResolverGroups(institutionId),
+            getUsersByInstitution(institutionId),
+        ])
+            .then(([groupRes, allUsers]) => {
                 if (cancel) return;
-                const groups = res.response ?? [];
+                const groups = groupRes.response ?? [];
                 const isMember = groups.some(
                     (g) =>
                         g.status === "active" &&
                         g.member_ids.includes(localUser.id as number)
                 );
                 setIsResolverGroupMember(isMember);
+
+                // Collect all member IDs from active resolver groups.
+                const activeMemberIds = new Set<number>();
+                for (const g of groups) {
+                    if (g.status === "active") {
+                        for (const id of g.member_ids) activeMemberIds.add(id);
+                    }
+                }
+
+                // Keep only users who are in an active resolver group AND
+                // have the can_resolve permission.
+                const resolvers = allUsers.filter(
+                    (u) =>
+                        activeMemberIds.has(u.id) &&
+                        u.role?.can_resolve
+                );
+                setResolverGroupMembers(resolvers);
             })
             .catch(() => {
-                if (!cancel) setIsResolverGroupMember(false);
+                if (!cancel) {
+                    setIsResolverGroupMember(false);
+                    setResolverGroupMembers([]);
+                }
             });
 
         return () => { cancel = true; };
@@ -575,6 +635,47 @@ export default function TicketDetailPanel({
             .finally(() => { if (!cancel) setAttachmentsLoading(false); });
         return () => { cancel = true; };
     }, [ticket?.ticket_id]);
+
+    // Fetch subcategory template data (subject_name, description) whenever the ticket changes.
+    useEffect(() => {
+        if (!ticket?.subcategory_id) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setSubCategoryTemplate(null);
+            return;
+        }
+        let cancel = false;
+        getSubCategoryByID(ticket.subcategory_id)
+            .then((res) => {
+                if (cancel) return;
+                const data = res.response;
+                if (data) {
+                    setSubCategoryTemplate({
+                        subject_name: data.subject_name ?? "",
+                        description: data.description ?? "",
+                    });
+                } else {
+                    setSubCategoryTemplate(null);
+                }
+            })
+            .catch(() => { if (!cancel) setSubCategoryTemplate(null); });
+        return () => { cancel = true; };
+    }, [ticket?.subcategory_id]);
+
+    // Fetch project name whenever the ticket changes.
+    useEffect(() => {
+        if (!ticket?.project_id) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setProjectName(null);
+            return;
+        }
+        let cancel = false;
+        getProjectByID(ticket.project_id)
+            .then((data) => {
+                if (!cancel) setProjectName(data?.project_name ?? null);
+            })
+            .catch(() => { if (!cancel) setProjectName(null); });
+        return () => { cancel = true; };
+    }, [ticket?.project_id]);
 
     // Reflects the current selection's formatting state onto the toolbar
     // so active buttons (bold/italic/etc.) show as "on".
@@ -743,11 +844,11 @@ export default function TicketDetailPanel({
             pendingAction?.phase === "in_progress" &&
             pendingAction?.stepId === "resolved";
         if (!isResolveDialog) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
+             
             setResolutionNote("");
         }
         if (!pendingAction || pendingAction.kind !== "cancel") {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
+             
             setCancelReason("");
         }
     }, [pendingAction]);
@@ -764,12 +865,14 @@ export default function TicketDetailPanel({
 
     const ticketId = ticket?.ticket_id ?? "—";
     const completedSteps = ticket ? getCompletedSteps(ticket.status) : 0;
+    const stopStep = ticket ? getStopStep(ticket) : -1;
+    const isCancelled = stopStep >= 0;
     const approvalChain = ticket ? approvalChainFromTicket(ticket, completedSteps) : [];
 
     // NOTE: InstitutionTicket has no remarks/attachment fields yet.
 
     const isConfirmDisabled =
-        (pendingAction?.kind === "reassign" && reassignTarget.trim() === "") ||
+        (pendingAction?.kind === "reassign" && reassignTarget === "") ||
         (pendingAction?.kind === "accept" && pendingAction?.phase === "in_progress" && resolutionNote.trim() === "") ||
         (pendingAction?.kind === "cancel" && cancelReason.trim() === "");
 
@@ -790,13 +893,31 @@ export default function TicketDetailPanel({
                     <ClipboardList size={20} />
                     <span>Ticket Details</span>
                     </span>
-                    <button
-                        onClick={onClose}
-                        aria-label="Close ticket panel"
-                        className="text-gray-700 hover:text-gray-900 transition-colors"
-                    >
-                        <X size={22} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {canCancel && (
+                            <button
+                                type="button"
+                                aria-label="Cancel ticket"
+                                onClick={() => setPendingAction({
+                                    stepId: "submitted",
+                                    kind: "cancel",
+                                    label: "Cancel Ticket",
+                                    description: "Are you sure you want to cancel this ticket? This cannot be undone.",
+                                })}
+                                className="flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0"
+                            >
+                                <Ban size={12} />
+                                CANCEL TICKET
+                            </button>
+                        )}
+                        <button
+                            onClick={onClose}
+                            aria-label="Close ticket panel"
+                            className="text-gray-700 hover:text-gray-900 transition-colors"
+                        >
+                            <X size={22} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Content */}
@@ -830,23 +951,7 @@ export default function TicketDetailPanel({
                                         </button>
                                     )}
 
-                                    {/* Submitter: cancel the whole ticket */}
-                                    {canCancel && (
-                                        <button
-                                            type="button"
-                                            aria-label="Cancel ticket"
-                                            onClick={() => setPendingAction({
-                                                stepId: "submitted",
-                                                kind: "cancel",
-                                                label: "Cancel Ticket",
-                                                description: "Are you sure you want to cancel this ticket? This cannot be undone.",
-                                            })}
-                                            className="flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0"
-                                        >
-                                            <Ban size={12} />
-                                            CANCEL TICKET
-                                        </button>
-                                    )}
+
                                 </div>
 
                                 <Field label="Resolver Pool" value={String(ticket.institution_pool ?? "")} />
@@ -854,7 +959,7 @@ export default function TicketDetailPanel({
                                 <Field label="Category" value={ticket.category?.category_name} />
                                 <Field label="Sub-Category" value={ticket.subcategory?.sub_category_name} />
                                 <Field label="Created At" value={formatDate(ticket.created_at)} />
-                                <Field label="Project ID" value={String(ticket.project_id ?? "")} />
+                                <Field label="Project" value={projectName ?? String(ticket.project_id ?? "")} />
                                 <Field label="Duration" value={ticket.resolution_time} />
                                 <Field label="Submitter" value={fullName(ticket.submitter)} />
 
@@ -869,6 +974,7 @@ export default function TicketDetailPanel({
                                             {ticket.description || "—"}
                                         </div>
                                     </div>
+
                                 </div>
 
                                 <Field label="Date Needed" value={formatDate(ticket.due_date)} />
@@ -952,19 +1058,24 @@ export default function TicketDetailPanel({
                                         <div className="absolute top-4 left-[8.33%] right-[8.33%] h-[2px] bg-gray-200" />
 
                                         {/* Completed connecting line */}
-                                        <div
-                                            className="absolute top-4 left-[8.33%] h-[2px] bg-emerald-400"
-                                            style={{
-                                                width:
-                                                    completedSteps > 1
-                                                        ? `${((completedSteps - 1) / 5) * 83.34}%`
-                                                        : "0%",
-                                            }}
-                                        />
+                                        {(() => {
+                                            const filledSteps = isCancelled ? stopStep + 1 : completedSteps;
+                                            return filledSteps > 1 ? (
+                                                <div
+                                                    className="absolute top-4 left-[8.33%] h-[2px] bg-emerald-400"
+                                                    style={{
+                                                        width: `${((filledSteps - 1) / 5) * 83.34}%`,
+                                                    }}
+                                                />
+                                            ) : null;
+                                        })()}
 
                                         {/* Steps */}
                                         <div className="grid grid-cols-6 relative">
-                                            {PROGRESS_STEPS.map((step, i) => (
+                                            {PROGRESS_STEPS.map((step, i) => {
+                                                const isStopped = isCancelled && i === stopStep;
+                                                const isBeforeStop = isCancelled && i < stopStep;
+                                                return (
                                                 <div
                                                     key={step}
                                                     className="flex flex-col items-center"
@@ -972,12 +1083,20 @@ export default function TicketDetailPanel({
                                                     {/* Circle */}
                                                     <div
                                                         className={`w-8 h-8 rounded-full flex items-center justify-center z-10 ${
-                                                            i < completedSteps
+                                                            isStopped
+                                                                ? "bg-rose-500"
+                                                                : i < completedSteps || isBeforeStop
                                                                 ? "bg-emerald-400"
                                                                 : "bg-gray-200"
                                                         }`}
                                                     >
-                                                        {i < completedSteps && (
+                                                        {isStopped ? (
+                                                            <X
+                                                                size={16}
+                                                                className="text-white"
+                                                                strokeWidth={3}
+                                                            />
+                                                        ) : (i < completedSteps || isBeforeStop) && (
                                                             <Check
                                                                 size={16}
                                                                 className="text-white"
@@ -991,7 +1110,8 @@ export default function TicketDetailPanel({
                                                         {step}
                                                     </span>
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </div>
@@ -1010,29 +1130,45 @@ export default function TicketDetailPanel({
                                                 const phase = step.resolverPhase;
 
                                                 // Live elapsed label for the in-progress resolver row.
-                                                // Falls back to duration if available; otherwise just
-                                                // ticks up from 0 while `elapsedTick` re-renders it.
+                                                // Uses started_at and hold_at to compute elapsed time,
+                                                // pausing the timer while on hold.
+                                                const computeElapsed = (): number => {
+                                                    const startedAt = (ticket as { started_at?: string }).started_at;
+                                                    if (!startedAt) return elapsedTick * 1000;
+
+                                                    const holdAt = (ticket as { hold_at?: string | null }).hold_at;
+                                                    const onHold = (ticket as { onhold?: boolean }).onhold;
+
+                                                    if (onHold && holdAt) {
+                                                        // Timer frozen at the moment hold was pressed.
+                                                        return new Date(holdAt).getTime() - new Date(startedAt).getTime();
+                                                    }
+
+                                                    // Running — but if there was a previous hold, account
+                                                    // for the paused duration so the timer picks up where
+                                                    // it left off after resume.
+                                                    const now = Date.now();
+                                                    const base = now - new Date(startedAt).getTime();
+                                                    return base > 0 ? base : elapsedTick * 1000;
+                                                };
+
                                                 const inProgressLabel =
                                                     phase === "in_progress"
-                                                        ? `In Progress: ${
-                                                              (ticket as { resolver_started_at?: string }).resolver_started_at
-                                                                  ? formatElapsed(
-                                                                        // eslint-disable-next-line react-hooks/purity
-                                                                        Date.now() -
-                                                                            new Date(
-                                                                                (ticket as { resolver_started_at?: string }).resolver_started_at!
-                                                                            ).getTime()
-                                                                    )
-                                                                  : formatElapsed(elapsedTick * 1000)
-                                                          }`
+                                                        ? `In Progress: ${formatElapsed(computeElapsed())}`
                                                         : undefined;
 
-                                                // Resolver row can show a REASSIGN button alongside
-                                                // whichever phase-specific buttons are already visible.
+                                                const onHoldLabel =
+                                                    phase === "on_hold"
+                                                        ? `On Hold: ${formatElapsed(computeElapsed())}`
+                                                        : undefined;
+
+                                                // Resolver row REASSIGN — during for_review (resolver group members)
+                                                // or on_hold (only the assigned resolver who grabbed it)
+                                                const isAssignedResolver = localUser.id === (ticket as { resolver_id?: number | null }).resolver_id;
                                                 const showResolverReassign =
                                                     isResolverRow &&
-                                                    (phase === "for_review" || phase === "in_progress" || phase === "on_hold") &&
-                                                    canReassignResolver;
+                                                    ((phase === "for_review" && canReassignResolver) ||
+                                                     (phase === "on_hold" && isAssignedResolver));
 
                                                 return (
                                                     <div
@@ -1061,17 +1197,21 @@ export default function TicketDetailPanel({
                                                                 )}
                                                                 <div
                                                                     className={`text-xs ${
-                                                                        phase === "on_hold" || phase === "for_review"
+                                                                        step.cancelled
+                                                                            ? "text-gray-400"
+                                                                            : phase === "on_hold" || phase === "for_review"
                                                                             ? "font-bold uppercase tracking-wide text-amber-500"
                                                                             : phase === "in_progress"
                                                                             ? "font-semibold text-violet-500"
                                                                             : "text-gray-400"
                                                                     }`}
                                                                 >
-                                                                    {phase === "for_review"
+                                                                    {step.cancelled
+                                                                        ? (step.cancelTimestamp || "Cancelled")
+                                                                        : phase === "for_review"
                                                                         ? "For Review"
                                                                         : phase === "on_hold"
-                                                                        ? "On Hold"
+                                                                        ? (onHoldLabel ?? "On Hold")
                                                                         : phase === "in_progress"
                                                                         ? inProgressLabel
                                                                         : (step.timestamp || "—")}
@@ -1114,8 +1254,8 @@ export default function TicketDetailPanel({
                                                                 </>
                                                             )}
 
-                                                            {/* ── Resolver row: in_progress ── only the assigned resolver (group member) */}
-                                                            {isResolverRow && phase === "in_progress" && canResolve && (
+                                                            {/* ── Resolver row: in_progress ── only the assigned resolver */}
+                                                            {isResolverRow && phase === "in_progress" && canResolve && localUser.id === (ticket as { resolver_id?: number | null }).resolver_id && (
                                                                 <>
                                                                     <button
                                                                         type="button"
@@ -1148,8 +1288,8 @@ export default function TicketDetailPanel({
                                                                 </>
                                                             )}
 
-                                                            {/* ── Resolver row: on_hold ── only the assigned resolver (group member) */}
-                                                            {isResolverRow && phase === "on_hold" && canResolve && (
+                                                            {/* ── Resolver row: on_hold ── only the assigned resolver */}
+                                                            {isResolverRow && phase === "on_hold" && canResolve && localUser.id === (ticket as { resolver_id?: number | null }).resolver_id && (
                                                                 <>
                                                                     <button
                                                                         type="button"
@@ -1253,7 +1393,7 @@ export default function TicketDetailPanel({
                                                             )}
 
                                                             {/* ── Approver row ── accept/reject only, no reassign */}
-                                                            {!isResolverRow && step.id === "approved" && step.pending && canApprove && (
+                                                            {!isResolverRow && step.id === "approved" && step.pending && canResolve && (
                                                                 <>
                                                                     <button
                                                                         type="button"
@@ -1284,9 +1424,12 @@ export default function TicketDetailPanel({
                                                                 </>
                                                             )}
 
+                                                            {/* Status badge: shown for completed steps */}
                                                             {(!step.pending && phase !== "in_progress" && phase !== "on_hold" && phase !== "for_review") && (
                                                                 <span
-                                                                    className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap text-white bg-emerald-400 shrink-0"
+                                                                    className={`text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap text-white shrink-0 ${
+                                                                        step.cancelled ? "bg-rose-500" : "bg-emerald-400"
+                                                                    }`}
                                                                 >
                                                                     {step.status}
                                                                     {step.duration && (
@@ -1294,10 +1437,35 @@ export default function TicketDetailPanel({
                                                                     )}
                                                                 </span>
                                                             )}
+
+                                                            {/* Fallback badge for pending steps where the current user has no action */}
+                                                            {step.pending && isEndorserRow && !canEndorse && (
+                                                                <span
+                                                                    className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap bg-amber-50 text-amber-600 shrink-0"
+                                                                >
+                                                                    FOR REVIEW
+                                                                </span>
+                                                            )}
+                                                            {step.pending && !isResolverRow && step.id === "approved" && !canResolve && (
+                                                                <span
+                                                                    className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap bg-amber-50 text-amber-600 shrink-0"
+                                                                >
+                                                                    FOR APPROVAL
+                                                                </span>
+                                                            )}
+                                                            {isResolverRow && step.pending && !canResolve && (
+                                                                <span
+                                                                    className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap bg-amber-50 text-amber-600 shrink-0"
+                                                                >
+                                                                    FOR RESOLUTION
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 );
                                             })}
+
+
                                         </div>
                                     )}
                                 </div>
@@ -1309,6 +1477,22 @@ export default function TicketDetailPanel({
                                     </div>
 
                                     <div className="flex-1 overflow-y-auto space-y-4 flex flex-col">
+                                        {/* Cancellation reason — shown at the top of remarks when present */}
+                                        {isCancelled && ticket?.cancellation_reason && (
+                                            <div className="flex items-end justify-end gap-3">
+                                                <div className="flex flex-col items-end max-w-[75%]">
+                                                    <div className="text-sm font-bold text-rose-600 mb-1">
+                                                        Cancelled — Reason
+                                                    </div>
+                                                    <div className="bg-rose-50 border border-rose-100 rounded-2xl px-4 py-3 text-sm text-rose-700 w-full min-h-[3.25rem]">
+                                                        {ticket.cancellation_reason}
+                                                    </div>
+                                                    <div className="text-[10px] text-gray-400 mt-1">                                                         {ticket?.cancelled_at ? formatDate(ticket.cancelled_at) : ""}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {remarksLoading ? (
                                             <div className="flex-1 flex items-center justify-center text-xs text-gray-400 text-center">
                                                 Loading remarks…
@@ -1507,18 +1691,28 @@ export default function TicketDetailPanel({
                             />
                         )}
 
-                        {/* Reassign target picker — a plain user-id field until a
-                            real "list endorsers/approvers" endpoint is wired in. */}
+                        {/* Reassign target picker — dropdown of resolver group members with can_resolve */}
                         {pendingAction.kind === "reassign" && (
-                            <input
-                                type="number"
-                                inputMode="numeric"
+                            <select
                                 autoFocus
                                 value={reassignTarget}
-                                onChange={(e) => setReassignTarget(e.target.value)}
-                                placeholder="User ID to reassign to"
-                                className="w-full mb-5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#1E4637]"
-                            />
+                                onChange={(e) => setReassignTarget(e.target.value ? Number(e.target.value) : "")}
+                                className="w-full mb-5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#1E4637] bg-white"
+                            >
+                                <option value="" disabled>
+                                    Select a resolver…
+                                </option>
+                                {resolverGroupMembers.map((member) => (
+                                    <option key={member.id} value={member.id}>
+                                        {member.first_name} {member.last_name} ({member.staff_id})
+                                    </option>
+                                ))}
+                                {resolverGroupMembers.length === 0 && (
+                                    <option value="" disabled>
+                                        No resolvers available
+                                    </option>
+                                )}
+                            </select>
                         )}
 
                         {/* Surface API failures (and unmapped actions) instead of

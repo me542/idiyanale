@@ -8,10 +8,8 @@ import {
   User,
   ArrowRight,
   ArrowLeft,
-  CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Page = "login" | "verification";
@@ -324,7 +322,7 @@ function VerificationPage({
   const [canResend, setCanResend] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [, setSuccess] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -334,13 +332,57 @@ function VerificationPage({
     return () => clearTimeout(t);
   }, [timeLeft]);
 
-  useEffect(() => {
-  const fullCode = code.join("");
+  async function handleConfirm() {
+    const full = code.join("");
 
-  if (fullCode.length === CODE_LENGTH && !loading) {
-    handleConfirm();
+    if (full.length < CODE_LENGTH) {
+      setError("Enter all 6 digits.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+
+      // verifyOTP now returns { token, message, retCode } directly —
+      // it already throws internally if the token is missing, so if we
+      // get here, res.token is guaranteed to exist.
+      const res = await verifyOTP(staffId, full);
+      const token = res.token;
+
+      // Client-side storage for use in fetch/axios headers, etc.
+      localStorage.setItem("token", token);
+
+      // RootPage (app/page.tsx) and middleware.ts read a "token" cookie
+      // via next/headers' cookies() / request.cookies — NOT localStorage —
+      // so we must also set an actual cookie here.
+      document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24 * 7}`;
+
+      onVerified();
+      setSuccess(true);
+
+      // Redirect based on the role stored by persistSession()
+      const storedRole = localStorage.getItem("role");
+      if (storedRole === "super-admin") {
+        router.replace("/dashboard");
+      } else {
+        router.replace("/Dashboard");
+      }
+    } catch (err: unknown) {
+      setError((err as Error)?.message || "Invalid OTP");
+    } finally {
+      setLoading(false);
+    }
   }
-}, [code]);
+
+  useEffect(() => {
+    const fullCode = code.join("");
+
+    if (fullCode.length === CODE_LENGTH && !loading) {
+      // eslint-disable-next-line react-hooks/immutability, react-hooks/set-state-in-effect
+      handleConfirm();
+    }
+  }, [code, loading]);
 
   const minutes = String(Math.floor(timeLeft / 60)).padStart(2, "0");
   const seconds = String(timeLeft % 60).padStart(2, "0");
@@ -377,41 +419,6 @@ function VerificationPage({
     inputRefs.current[0]?.focus();
   };
 
-  const handleConfirm = async () => {
-    const full = code.join("");
-
-    if (full.length < CODE_LENGTH) {
-      setError("Enter all 6 digits.");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError("");
-
-      // verifyOTP now returns { token, message, retCode } directly —
-      // it already throws internally if the token is missing, so if we
-      // get here, res.token is guaranteed to exist.
-      const res = await verifyOTP(staffId, full);
-      const token = res.token;
-
-      // Client-side storage for use in fetch/axios headers, etc.
-      localStorage.setItem("token", token);
-
-      // RootPage (app/page.tsx) and middleware.ts read a "token" cookie
-      // via next/headers' cookies() / request.cookies — NOT localStorage —
-      // so we must also set an actual cookie here.
-      document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24 * 7}`;
-
-      onVerified();
-      setSuccess(true);
-      router.replace("/Dashboard");
-    } catch (err: unknown) {
-      setError((err as Error)?.message || "Invalid OTP");
-    } finally {
-      setLoading(false);
-    }
-  };
   // if (success) {
   //   return (
   //     <Card>

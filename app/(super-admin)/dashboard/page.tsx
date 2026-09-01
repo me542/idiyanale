@@ -1,23 +1,25 @@
 'use client';
 
 import React, { useState } from 'react';
-// import { LayoutDashboard } from 'lucide-react';
 import Filter from './components/filter';
 import UserChart from './components/user-chart';
 import TicketChart from './components/ticket-chart';
 import CountChart from './components/count-chart';
 import DailyTicket from './components/daily-ticket';
 
+export interface DashboardFilters {
+  institution: string;
+  ticketType: string;
+}
+
 export default function DashboardPage() {
-  const [_filters, setFilters] = useState({
+  const [filters, setFilters] = useState<DashboardFilters>({
     institution: 'ALL',
     ticketType: 'ALL',
   });
 
-  const handleFilterChange = (newFilters: { institution: string; ticketType: string }) => {
+  const handleFilterChange = (newFilters: DashboardFilters) => {
     setFilters(newFilters);
-    console.log('Filters applied:', newFilters);
-    // TODO: Fetch data based on filters
   };
 
   return (
@@ -29,23 +31,28 @@ export default function DashboardPage() {
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* User Chart */}
-          <UserChart />
-          
-          {/* Ticket Chart */}
-          <div className="lg:col-span-1">
-            <TicketChart />
+          {/* User Chart - spans 2 columns */}
+          <div className="lg:col-span-2">
+            <UserChart filters={filters} />
           </div>
 
-          {/* Count Chart */}
+          {/* Count Chart - spans 1 column */}
           <div className="lg:col-span-1">
-            <CountChart />
+            <CountChart filters={filters} />
           </div>
         </div>
 
-        {/* Daily Ticket Chart - Full Width */}
-        <div>
-          <DailyTicket />
+        {/* Second Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          {/* Ticket Chart - spans 2 columns */}
+          <div className="lg:col-span-2">
+            <TicketChart filters={filters} />
+          </div>
+
+          {/* Daily Ticket - spans 1 column */}
+          <div className="lg:col-span-1">
+            <DailyTicket filters={filters} />
+          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,4 @@
-// shared/layout/mockData.ts
-import { profile } from "console";
+
 import {
   ListTodo,
   MessageCircleMore,

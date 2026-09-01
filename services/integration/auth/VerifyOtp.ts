@@ -59,6 +59,8 @@ async function persistSession(token: string) {
   const maxAge = 60 * 60;
 
   document.cookie = `token=${token}; path=/; max-age=${maxAge}; samesite=lax`;
+  // The middleware checks role === "staff" for staff access control.
+  // The specific role (e.g. "Insti-Admin") lives in the user_role cookie.
   document.cookie = `role=staff; path=/; max-age=${maxAge}; samesite=lax`;
   document.cookie = `user_role=${claims.role ?? ""}; path=/; max-age=${maxAge}; samesite=lax`;
 }

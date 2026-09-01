@@ -23,12 +23,12 @@ export default function ByCategory({
   const hasData = categories.length > 0 && total > 0;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-md p-6">
+    <div>
       <div className="text-[15px] font-extrabold tracking-wide text-slate-800">
         BY CATEGORY
       </div>
 
-      <hr className="border-t border-slate-200 my-4 -mx-6" />
+      <hr className="border-t border-slate-200 my-4" />
 
       {loading ? (
         <div className="text-xs text-slate-500">

@@ -187,7 +187,7 @@ export default function ActivityPanel({
 
         // Add your API call here.
 
-        handleBackToMenu();
+        handleClosePanel();
     };
 
     /**

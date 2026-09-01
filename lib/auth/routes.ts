@@ -23,7 +23,7 @@ export const ROUTES: AppRoute[] = [
   { path: "/management/top", title: "Top", clickable: true },
   { path: "/management/template", title: "Template", clickable: true },
   { path: "/management/user-management", title: "User Management", clickable: true },
-    { path: "/management/server-management", title: "Server Management", clickable: true },
+  { path: "/management/server-management", title: "Server Management", clickable: true },
 
   // super-admin
   { path: "/dashboard", title: "Dashboard", clickable: true },
@@ -34,7 +34,6 @@ export const ROUTES: AppRoute[] = [
 export const NON_CLICKABLE_PARENTS = new Set([
   "/ticket",
   "/minor-task",
-  "/management",
   "/management",
 ]);
 

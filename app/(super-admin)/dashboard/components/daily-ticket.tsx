@@ -30,7 +30,11 @@ interface DailyData {
 
 type Period = 7 | 30;
 
-const DailyTicket = () => {
+interface DailyTicketProps {
+  filters?: { institution: string; ticketType: string };
+}
+
+const DailyTicket = ({ filters }: DailyTicketProps) => {
   const [data, setData] = useState<DailyData[]>([]);
   const [period, setPeriod] = useState<Period>(7);
   const [loading, setLoading] = useState(true);
@@ -55,10 +59,18 @@ const DailyTicket = () => {
         }
 
         /*
+         * Filter institutions if needed
+         */
+        const filteredInstitutions =
+          filters?.institution && filters.institution !== 'ALL'
+            ? institutions.filter((i) => i.institution_name === filters.institution)
+            : institutions;
+
+        /*
          * Get tickets from every institution
          */
         const results = await Promise.all(
-          institutions.map(async (institution) => {
+          filteredInstitutions.map(async (institution) => {
             try {
               const tickets =
                 await getAllTicketsByInstitution(
@@ -80,8 +92,24 @@ const DailyTicket = () => {
         /*
          * Flatten all tickets
          */
-        const allTickets =
+        let allTickets =
           results.flat();
+
+        /*
+         * Filter by ticket type if specified
+         */
+        if (filters?.ticketType && filters.ticketType !== 'ALL') {
+          const typeLower = filters.ticketType.toLowerCase();
+          allTickets = allTickets.filter((ticket) => {
+            const ticketType = ticket.ticket_type?.ticket_type_name?.trim().toLowerCase() ?? '';
+            if (typeLower === 'service request') return ticketType === 'service request';
+            if (typeLower === 'changed request' || typeLower === 'change request')
+              return ticketType === 'changed request' || ticketType === 'change request';
+            if (typeLower === 'incident report' || typeLower === 'incident')
+              return ticketType === 'incident report' || ticketType === 'incident';
+            return true;
+          });
+        }
 
         /*
          * Create date range
@@ -223,7 +251,7 @@ const DailyTicket = () => {
     };
 
     loadDailyTickets();
-  }, [period]);
+  }, [period, filters]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">

@@ -20,7 +20,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   }
   if (!stored.id) return null;
 
-  if (role === "Super-Admin") {
+  if (role?.toLowerCase() === "super-admin") {
     const res = await getSuperAdminById(stored.id);
     return { kind: "super-admin", data: res.response };
   }

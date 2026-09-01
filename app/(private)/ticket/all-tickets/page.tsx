@@ -43,7 +43,7 @@ import {
   getStatusBucket,
   getReviewStage,
   normalizeStatus,
-} from "../dashboard/components/status_ticket";
+} from "../../Dashboard/components/status_ticket";
 
 // ---------------------------------------------------------
 // Row shape rendered by the table
@@ -528,7 +528,7 @@ function mapToRow(
     HoldAt: t.hold_at,
 
     cancelBy: fullName(t.canceller),
-    cancelAt: t.cancel_at,
+    cancelAt: t.cancelled_at,
 
     ClosedBy: fullName(t.closer),
     ClosedAt: t.closed_at,

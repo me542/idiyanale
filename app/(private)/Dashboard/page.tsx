@@ -4,7 +4,8 @@ import StatusTickets from "./components/StatusTickets";
 import MyTicket from "./components/RecentTicket";
 import ByCategory from "./components/ByCategory";
 import DueActivity from "./components/DueActivity";
-import { useCategoryStats } from "./components/cagetory";
+import ByTicketType from "./components/ByTicketType";
+import { useCategoryStats, useTicketTypeStats } from "./components/cagetory";
 import { useAuth } from "@/lib/auth/permission";
 
 export default function DashboardPage() {
@@ -16,6 +17,13 @@ export default function DashboardPage() {
     loading: categoryLoading,
     error: categoryError,
   } = useCategoryStats(institutionId);
+
+  const {
+    categories: ticketTypes,
+    total: ticketTypeTotal,
+    loading: ticketTypeLoading,
+    error: ticketTypeError,
+  } = useTicketTypeStats(institutionId);
 
   if (authLoading) {
     return (
@@ -44,12 +52,25 @@ export default function DashboardPage() {
 
         <div className="flex flex-col gap-5">
           <DueActivity />
-          <ByCategory
-            categories={categories}
-            total={categoryTotal}
-            loading={categoryLoading}
-            error={categoryError}
-          />
+
+          {/* Combined card: Ticket Type on top, Category below */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-md p-6">
+            <ByTicketType
+              categories={ticketTypes}
+              total={ticketTypeTotal}
+              loading={ticketTypeLoading}
+              error={ticketTypeError}
+            />
+
+            <hr className="border-t border-slate-200 my-5" />
+
+            <ByCategory
+              categories={categories}
+              total={categoryTotal}
+              loading={categoryLoading}
+              error={categoryError}
+            />
+          </div>
         </div>
       </div>
     </main>

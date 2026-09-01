@@ -125,36 +125,44 @@ function emptyStatuses(): StatusItem[] {
   ];
 }
 
+type TicketTooltipItem = {
+  value?: number | string;
+  payload?: {
+    total?: number;
+    color?: string;
+    label?: string;
+  };
+};
+
 /*
  * Custom tooltip
  *
  * This appears above the donut when
  * hovering over a ticket type.
  */
-const TicketTooltip = ({
+function TicketTooltip({
   active,
   payload,
-}: any) => {
-  if (
-    !active ||
+}: {
+  active?: boolean;
+  payload?: TicketTooltipItem[];
+}): React.JSX.Element | null {
+  if (!active ||
     !payload ||
-    !payload.length
-  ) {
+    !payload.length) {
     return null;
   }
 
   const item = payload[0];
 
-  const total =
-    item.payload?.total ?? 0;
+  const total = item.payload?.total ?? 0;
 
-  const value =
-    item.value ?? 0;
+  const value = item.value ?? 0;
+  const numericValue = Number(value);
 
-  const percentage =
-    total > 0
-      ? ((value / total) * 100).toFixed(1)
-      : '0.0';
+  const percentage = total > 0
+    ? ((numericValue / total) * 100).toFixed(1)
+    : '0.0';
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 min-w-[150px]">
@@ -164,10 +172,8 @@ const TicketTooltip = ({
         <span
           className="w-2.5 h-2.5 rounded-full shrink-0"
           style={{
-            backgroundColor:
-              item.payload?.color,
-          }}
-        />
+            backgroundColor: item.payload?.color,
+          }} />
 
         <span className="text-xs font-semibold text-gray-800">
           {item.payload?.label}
@@ -186,9 +192,13 @@ const TicketTooltip = ({
       </div>
     </div>
   );
-};
+}
 
-const CountChart = () => {
+interface CountChartProps {
+  filters?: { institution: string; ticketType: string };
+}
+
+const CountChart = ({ filters }: CountChartProps) => {
   const [period, setPeriod] =
     useState<Period>('7d');
 
@@ -199,6 +209,7 @@ const CountChart = () => {
     useState(
       formatDate(
         new Date(
+          // eslint-disable-next-line react-hooks/purity
           Date.now() -
             6 * 86400000
         )
@@ -312,10 +323,16 @@ const CountChart = () => {
 
           /*
            * Get tickets from every institution
+           * (skip institutions filtered out)
            */
+          const filteredInstitutions =
+            filters?.institution && filters.institution !== 'ALL'
+              ? institutions.filter((i) => i.institution_name === filters.institution)
+              : institutions;
+
           const ticketResults =
             await Promise.all(
-              institutions.map(
+              filteredInstitutions.map(
                 async (
                   institution
                 ) => {
@@ -338,8 +355,24 @@ const CountChart = () => {
           /*
            * Combine all tickets
            */
-          const allTickets =
+          let allTickets =
             ticketResults.flat();
+
+          /*
+           * Filter by ticket type if specified
+           */
+          if (filters?.ticketType && filters.ticketType !== 'ALL') {
+            const typeLower = filters.ticketType.toLowerCase();
+            allTickets = allTickets.filter((ticket) => {
+              const ticketType = ticket.ticket_type?.ticket_type_name?.trim().toLowerCase() ?? '';
+              if (typeLower === 'service request') return ticketType === 'service request';
+              if (typeLower === 'changed request' || typeLower === 'change request')
+                return ticketType === 'changed request' || ticketType === 'change request';
+              if (typeLower === 'incident report' || typeLower === 'incident')
+                return ticketType === 'incident report' || ticketType === 'incident';
+              return true;
+            });
+          }
 
           /*
            * Ticket counters
@@ -479,6 +512,7 @@ const CountChart = () => {
     period,
     appliedCustomStart,
     appliedCustomEnd,
+    filters,
   ]);
 
   /*
@@ -761,6 +795,7 @@ const CountChart = () => {
                    * hovered slice
                    */
                   activeShape={(
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     props: any
                   ) => (
                     <Sector

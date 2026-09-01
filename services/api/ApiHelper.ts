@@ -83,7 +83,7 @@ async function handleResponse<T>(
         );
 
         const loginPath =
-          role === "Super-Admin"
+          role?.toLowerCase() === "super-admin"
             ? "/super-admin"
             : "/login";
 
