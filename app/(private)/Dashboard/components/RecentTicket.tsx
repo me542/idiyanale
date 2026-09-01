@@ -35,6 +35,7 @@ function getStatusStyle(status: string) {
       };
 
     case "in progress":
+    case "on hold":
       return {
         backgroundColor: lightTheme.in_progress,
         color: "#fff",
@@ -238,10 +239,34 @@ export default function MyTicket({ tickets = [] }: Props) {
     console.log("Send remark for", ticketId, message);
   }
 
+  // Count overdue tickets (past due_date, not completed/cancelled)
+  const completedStatuses = new Set(["resolved", "closed", "cancel", "canceled"]);
+  const now = new Date();
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const overdueCount = rawTickets.filter((t) => {
+    const status = t.status?.toLowerCase().trim().replace(/[\s_-]+/g, "");
+    if (completedStatuses.has(status)) return false;
+    if (!t.due_date) return false;
+    return new Date(t.due_date) < startOfToday;
+  }).length;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-md p-6">
-      <div className="text-[15px] font-extrabold tracking-wide text-slate-800">
-        RECENT TICKET
+      <div className="flex items-center justify-between">
+        <div className="text-[15px] font-extrabold tracking-wide text-slate-800">
+          RECENT TICKET
+        </div>
+
+        {overdueCount > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-full px-2.5 py-1">
+              {overdueCount} overdue
+            </span>
+          </div>
+        )}
       </div>
 
       <hr className="border-t border-slate-200 my-4 -mx-6" />

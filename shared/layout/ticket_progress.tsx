@@ -174,6 +174,13 @@ function formatElapsed(ms: number): string {
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}s`;
 }
 
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp"]);
+
+function isImageFile(fileName: string): boolean {
+    const ext = fileName.substring(fileName.lastIndexOf(".")).toLowerCase();
+    return IMAGE_EXTENSIONS.has(ext);
+}
+
 // Maps ticket.status to how many of PROGRESS_STEPS are "done".
 // Grouped the same way as getStatusStyle in DueActivity — keep these two in sync.
 function getCompletedSteps(status: string): number {
@@ -454,6 +461,9 @@ export default function TicketDetailPanel({
     const [attachmentsLoading, setAttachmentsLoading] = useState(false);
     const [uploadingAttachments, setUploadingAttachments] = useState(false);
 
+    // Preview modal for image attachments.
+    const [previewAttachment, setPreviewAttachment] = useState<TicketAttachmentFile | null>(null);
+
     // Subcategory template data — subject_name & description from the template system.
     const [subCategoryTemplate, setSubCategoryTemplate] = useState<{ subject_name: string; description: string } | null>(null);
 
@@ -523,13 +533,29 @@ export default function TicketDetailPanel({
     const canReassignEndorser =
         localUser.id !== null && userId(ticket?.submitter) === localUser.id;
 
-    // canApprove — any user whose role carries the can_approve permission.
-    const canApprove = localUser.permissions.can_approve;
+    // canApprove — only the user who IS the assigned approver, and who has
+    // the can_approve permission, can see approver action buttons.
+    const canApprove =
+        localUser.id !== null &&
+        ticket?.approver_id !== null &&
+        localUser.id === ticket?.approver_id &&
+        localUser.permissions.can_approve;
+
+    // isAlreadyAssigned — the current user is already assigned to a role
+    // (submitter, endorser, or approver) on this ticket. Used to prevent
+    // them from seeing action buttons on other roles' rows.
+    const isAlreadyAssigned =
+        localUser.id !== null && (
+            userId(ticket?.submitter) === localUser.id ||
+            localUser.id === ticket?.endorser_id ||
+            localUser.id === ticket?.approver_id
+        );
 
     // canResolve — users must belong to this ticket's resolver group and have
-    // the role's can_resolve permission.
+    // the role's can_resolve permission. Only visible if not already assigned
+    // to another role (submitter, endorser, or approver).
     const canResolve =
-        isResolverGroupMember && localUser.permissions.can_resolve;
+        isResolverGroupMember && localUser.permissions.can_resolve && !isAlreadyAssigned;
 
     // canReassignResolver — resolver group members with can_resolve can
     // reassign while the ticket is still in for_review (not yet grabbed).
@@ -991,26 +1017,56 @@ export default function TicketDetailPanel({
                                             {/* Existing attachments from the server */}
                                             {ticketAttachments.map((a) => (
                                                 <div key={a.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                                                    <Paperclip size={12} className="text-gray-400 shrink-0" />
-                                                    <span className="text-xs text-gray-700 truncate flex-1">{a.file_name}</span>
-                                                    {a.download_url && (
-                                                        <a
-                                                            href={a.download_url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-xs text-[#1E4637] font-semibold hover:underline shrink-0"
+                                                    {isImageFile(a.file_name) ? (
+                                                        <div
+                                                            className="w-10 h-10 rounded-md overflow-hidden bg-gray-200 shrink-0 cursor-pointer"
+                                                            onClick={() => setPreviewAttachment(a)}
                                                         >
-                                                            Download
-                                                        </a>
+                                                            <img
+                                                                src={a.download_url}
+                                                                alt={a.file_name}
+                                                                className="w-full h-full object-cover"
+                                                                onError={(e) => {
+                                                                    (e.target as HTMLImageElement).style.display = "none";
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <Paperclip size={12} className="text-gray-400 shrink-0" />
                                                     )}
-                                                    <button
-                                                        type="button"
-                                                        aria-label="Delete attachment"
-                                                        onClick={() => handleDeleteAttachment(a.id)}
-                                                        className="text-gray-300 hover:text-rose-500 transition-colors shrink-0"
-                                                    >
-                                                        <Trash2 size={12} />
-                                                    </button>
+                                                    <div className="flex flex-col min-w-0 flex-1">
+                                                        <span className="text-xs text-gray-700 truncate">{a.file_name}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        {isImageFile(a.file_name) && a.download_url && (
+                                                            <button
+                                                                type="button"
+                                                                aria-label="Preview attachment"
+                                                                onClick={() => setPreviewAttachment(a)}
+                                                                className="text-xs text-[#1E4637] font-semibold hover:underline"
+                                                            >
+                                                                Preview
+                                                            </button>
+                                                        )}
+                                                        {a.download_url && (
+                                                            <a
+                                                                href={a.download_url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-xs text-[#1E4637] font-semibold hover:underline"
+                                                            >
+                                                                Download
+                                                            </a>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            aria-label="Delete attachment"
+                                                            onClick={() => handleDeleteAttachment(a.id)}
+                                                            className="text-gray-300 hover:text-rose-500 transition-colors"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             ))}
 
@@ -1255,7 +1311,7 @@ export default function TicketDetailPanel({
                                                             )}
 
                                                             {/* ── Resolver row: in_progress ── only the assigned resolver */}
-                                                            {isResolverRow && phase === "in_progress" && canResolve && localUser.id === (ticket as { resolver_id?: number | null }).resolver_id && (
+                                                            {isResolverRow && phase === "in_progress" && isAssignedResolver && (
                                                                 <>
                                                                     <button
                                                                         type="button"
@@ -1289,7 +1345,7 @@ export default function TicketDetailPanel({
                                                             )}
 
                                                             {/* ── Resolver row: on_hold ── only the assigned resolver */}
-                                                            {isResolverRow && phase === "on_hold" && canResolve && localUser.id === (ticket as { resolver_id?: number | null }).resolver_id && (
+                                                            {isResolverRow && phase === "on_hold" && isAssignedResolver && (
                                                                 <>
                                                                     <button
                                                                         type="button"
@@ -1446,7 +1502,7 @@ export default function TicketDetailPanel({
                                                                     FOR REVIEW
                                                                 </span>
                                                             )}
-                                                            {step.pending && !isResolverRow && step.id === "approved" && !canResolve && (
+                                                            {step.pending && !isResolverRow && step.id === "approved" && !canApprove && (
                                                                 <span
                                                                     className="text-xs font-bold px-4 py-1.5 rounded-full whitespace-nowrap bg-amber-50 text-amber-600 shrink-0"
                                                                 >
@@ -1835,6 +1891,46 @@ export default function TicketDetailPanel({
                                     </span>
                                 ) : "Confirm"}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Image preview modal */}
+            {previewAttachment && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60"
+                    onClick={() => setPreviewAttachment(null)}
+                >
+                    <div
+                        className="relative max-w-3xl max-h-[85vh] w-full mx-4"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            type="button"
+                            aria-label="Close preview"
+                            onClick={() => setPreviewAttachment(null)}
+                            className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full bg-white shadow-lg flex items-center justify-center text-gray-600 hover:text-gray-900"
+                        >
+                            <X size={16} />
+                        </button>
+                        <img
+                            src={previewAttachment.download_url}
+                            alt={previewAttachment.file_name}
+                            className="w-full h-auto max-h-[80vh] object-contain rounded-xl bg-white"
+                        />
+                        <div className="mt-2 flex items-center justify-between bg-white rounded-xl px-4 py-2">
+                            <span className="text-sm text-gray-700 truncate max-w-[70%]">
+                                {previewAttachment.file_name}
+                            </span>
+                            <a
+                                href={previewAttachment.download_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-[#1E4637] font-semibold hover:underline"
+                            >
+                                Download
+                            </a>
                         </div>
                     </div>
                 </div>

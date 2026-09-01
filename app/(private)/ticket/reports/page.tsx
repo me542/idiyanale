@@ -85,7 +85,7 @@ export default function Page() {
 
   return (
     <main className="reports-page">
-      <div className="mx-auto flex h-full max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex h-full max-w-9xl flex-col gap-6">
         <Filter
           onFilterChange={setRange}
           onClear={() => setRange({ from: "", to: "" })}

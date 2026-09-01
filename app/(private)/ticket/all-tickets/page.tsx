@@ -65,8 +65,11 @@ type TicketRow = {
   Submitter: string;
   SubmitterId: number | null;
   Endorser: string;
+  EndorserId: number | null;
   Approver: string;
+  ApproverId: number | null;
   Resolver: string;
+  ResolverId: number | null;
 
   Status: string;
 
@@ -509,8 +512,11 @@ function mapToRow(
     SubmitterId: t.submitter?.id ?? null,
 
     Endorser: fullName(t.endorser),
+    EndorserId: t.endorser?.id ?? null,
     Approver: fullName(t.approver),
+    ApproverId: t.approver?.id ?? null,
     Resolver: fullName(t.resolver),
+    ResolverId: t.resolver?.id ?? null,
 
     Status: t.status,
 
@@ -1203,12 +1209,14 @@ function TicketsTableInner() {
     useMemo(() => {
       return tickets.filter(
         (ticket) => {
-          // My Ticket
+          // My Ticket — any ticket where the user is submitter, endorser, approver, or resolver
           if (mineOnly) {
             if (
               currentUserId === null ||
-              ticket.SubmitterId !==
-                currentUserId
+              (ticket.SubmitterId !== currentUserId &&
+               ticket.EndorserId !== currentUserId &&
+               ticket.ApproverId !== currentUserId &&
+               ticket.ResolverId !== currentUserId)
             ) {
               return false;
             }

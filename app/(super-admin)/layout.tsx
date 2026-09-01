@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import SuperAdminSidebar from "@/shared/layout/super-admin-sidebar";
 import Header from "@/shared/layout/header";
 import { Metadata } from "next";
+import ActivityPanel from "@/shared/layout/activity-panel";
 import { ActivityPanelProvider } from "@/shared/layout/activity-panel-context";
 
 export const metadata: Metadata = {
@@ -19,6 +20,8 @@ export default function SuperAdminLayout({
       <div className="min-h-screen bg-gray-50">
         {/* Sidebar */}
         <SuperAdminSidebar />
+
+        <ActivityPanel />
 
         {/* Main Content */}
         <div className="ml-20">

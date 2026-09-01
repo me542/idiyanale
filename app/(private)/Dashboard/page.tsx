@@ -3,7 +3,6 @@
 import StatusTickets from "./components/StatusTickets";
 import MyTicket from "./components/RecentTicket";
 import ByCategory from "./components/ByCategory";
-import DueActivity from "./components/DueActivity";
 import ByTicketType from "./components/ByTicketType";
 import { useCategoryStats, useTicketTypeStats } from "./components/cagetory";
 import { useAuth } from "@/lib/auth/permission";
@@ -51,8 +50,6 @@ export default function DashboardPage() {
         <MyTicket tickets={[]} />
 
         <div className="flex flex-col gap-5">
-          <DueActivity />
-
           {/* Combined card: Ticket Type on top, Category below */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-md p-6">
             <ByTicketType

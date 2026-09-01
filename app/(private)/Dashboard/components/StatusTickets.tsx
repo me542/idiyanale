@@ -35,7 +35,13 @@ function getStatusCounts(
     const bucket = getStatusBucket(ticket.status);
     if (bucket) counts[bucket] += 1;
 
-    if (currentUserId !== null && ticket.submitter?.id === currentUserId) {
+    if (
+      currentUserId !== null &&
+      (ticket.submitter?.id === currentUserId ||
+       ticket.endorser?.id === currentUserId ||
+       ticket.approver?.id === currentUserId ||
+       ticket.resolver?.id === currentUserId)
+    ) {
       counts.myTicket += 1;
     }
   }
