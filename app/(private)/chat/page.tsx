@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
@@ -852,7 +853,7 @@ function CreateConversationModal({
                 <div>
                   <p className="font-medium text-gray-900">Everyone</p>
                   {existingEveryoneGroup ? (
-                    <p className="text-sm text-gray-500">This group already exists — you'll be taken straight to it.</p>
+                    <p className="text-sm text-gray-500">This group already exists — you&apos;ll be taken straight to it.</p>
                   ) : (
                     <p className="text-sm text-gray-500">All {users.length} users will be added to this conversation</p>
                   )}
@@ -905,7 +906,7 @@ function CreateConversationModal({
               </div>
               {existingInstiGroup && (
                 <p className="text-xs text-gray-400 mt-2">
-                  This institution already has a group — you'll be taken straight to it.
+                  This institution already has a group — you&apos;ll be taken straight to it.
                 </p>
               )}
             </div>
@@ -1122,6 +1123,7 @@ function ChatPageInner() {
 
   const fetchParticipants = useCallback(async (conversationId: number) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const response = await ApiWrapper.getParticipants(conversationId) as any;
       const data = response?.response || response?.data || response;
       setParticipants(Array.isArray(data) ? data : []);

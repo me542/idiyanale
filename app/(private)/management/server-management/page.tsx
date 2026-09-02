@@ -695,6 +695,7 @@ export default function ServersPage() {
   // ---------- Initial Load ----------
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchServers();
     resolveInstitutionId();
   }, []);

@@ -25,18 +25,24 @@ function StatCard({ label, value }: { label: string; value: string }) {
 export default function Sli({ data, loading }: SliProps) {
   return (
     <div className="grid grid-cols-2 gap-4">
-      <StatCard label="Total Ticket" value={loading ? "..." : `${data?.totalTicket ?? 0}`} />
+      <StatCard
+        label="Total Ticket"
+        value={loading ? "..." : `${data?.totalTicket ?? 0}`}
+      />
+
       <StatCard
         label="Ave Request / Day"
-        value={loading ? "..." : `${data?.aveRequestPerDay ?? 0}`}
+        value={loading ? "..." : `${(data?.aveRequestPerDay ?? 0).toFixed(2)}`}
       />
+
       <StatCard
         label="Completion Rate"
-        value={loading ? "..." : `${(data?.completionRate ?? 0).toFixed(1)} %`}
+        value={loading ? "..." : `${(data?.completionRate ?? 0).toFixed(2)} %`}
       />
+
       <StatCard
         label="Avg Resolution Time"
-        value={loading ? "..." : `${(data?.avgResolutionTimeMin ?? 0).toFixed(1)} min`}
+        value={loading ? "..." : `${(data?.avgResolutionTimeMin ?? 0).toFixed(2)} min`}
       />
     </div>
   );

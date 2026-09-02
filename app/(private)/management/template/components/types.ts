@@ -1,8 +1,9 @@
 export type SubCategory = {
+  environment: boolean;
   id: string;
   name: string;
   description: string;
-  environment: boolean; // maps to API's has_duration
+  // environment: boolean; 
   subjectName: string;
   durationDays: number;
   status: string;

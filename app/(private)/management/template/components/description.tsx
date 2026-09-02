@@ -37,8 +37,9 @@ export function DescriptionCard({
         subCategory?.subjectName ?? "",
       description:
         subCategory?.description ?? "",
-      environment:
-        subCategory?.environment ?? false,
+      environment: false,
+      // environment:
+      //   subCategory?.environment ?? false,
       durationDays:
         subCategory?.durationDays ?? 0,
       status: subCategory?.status || "Active",
@@ -241,14 +242,14 @@ export function DescriptionCard({
                   Has Duration
                 </div>
 
-                <div className="mt-1 text-sm text-slate-700">
+                {/* <div className="mt-1 text-sm text-slate-700">
                   {subCategory.environment
                     ? "Enabled"
                     : "Disabled"}
-                </div>
+                </div> */}
               </div>
 
-              {subCategory.environment && (
+              {/* {subCategory.environment && (
                 <div>
                   <div className="text-xs font-medium text-slate-400">
                     Duration (days)
@@ -258,7 +259,7 @@ export function DescriptionCard({
                     {subCategory.durationDays}
                   </div>
                 </div>
-              )}
+              )} */}
 
               <div>
                 <div className="text-xs font-medium text-slate-400">

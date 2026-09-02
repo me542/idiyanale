@@ -18,7 +18,7 @@ export const StayTuned: React.FC<StayTunedProps> = ({
                 </h1>
 
                 <p className="text-lg md:text-xl text-gray-500 max-w-2xl leading-relaxed font-medium animate-in fade-in slide-in-from-bottom-4 duration-700">
-                    We're working hard to bring you the{" "}
+                    We&apos;re working hard to bring you the{" "}
                     <span className="text-[#1E4637] font-bold">
                         {featureTitle}
                     </span>{" "}

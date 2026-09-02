@@ -351,7 +351,7 @@ export default function MyTicket({ tickets = [] }: Props) {
                 >
                   <td className="pt-3 pb-3 pr-2 border-t border-slate-200 align-top">
                     <a
-                      className="text-blue-600 font-semibold"
+                      className="text-slate-700 font-semibold"
                       href="#"
                       onClick={(e) => {
                         e.preventDefault();

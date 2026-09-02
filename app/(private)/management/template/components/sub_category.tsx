@@ -56,27 +56,27 @@ export function EnvironmentField({
   selectedSubCategory: SubCategory | null;
   onToggle: (enabled: boolean) => void;
 }) {
-  return (
-    <FieldRow label="Environment">
-      <div className="flex flex-1 items-center gap-2">
-        <Switch
-          checked={selectedSubCategory?.environment ?? false}
-          onChange={onToggle}
-          disabled={!selectedSubCategory}
-          label="Toggle environment"
-        />
-        <span
-          className={`text-sm ${
-            selectedSubCategory ? "text-slate-500" : "text-slate-300"
-          }`}
-        >
-          {!selectedSubCategory
-            ? "Select a subcategory first"
-            : selectedSubCategory.environment
-            ? "Enabled"
-            : "Disabled"}
-        </span>
-      </div>
-    </FieldRow>
-  );
+  // return (
+  //   <FieldRow label="Environment">
+  //     <div className="flex flex-1 items-center gap-2">
+  //       <Switch
+  //         checked={selectedSubCategory?.environment ?? false}
+  //         onChange={onToggle}
+  //         disabled={!selectedSubCategory}
+  //         label="Toggle environment"
+  //       />
+  //       <span
+  //         className={`text-sm ${
+  //           selectedSubCategory ? "text-slate-500" : "text-slate-300"
+  //         }`}
+  //       >
+  //         {!selectedSubCategory
+  //           ? "Select a subcategory first"
+  //           : selectedSubCategory.environment
+  //           ? "Enabled"
+  //           : "Disabled"}
+  //       </span>
+  //     </div>
+  //   </FieldRow>
+  // );
 }

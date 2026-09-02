@@ -1718,14 +1718,14 @@ export default function Page() {
               }
             />
 
-            <EnvironmentField
+            {/* <EnvironmentField
               selectedSubCategory={
                 selectedSubCategory
               }
               onToggle={
                 toggleEnvironment
               }
-            />
+            /> */}
           </div>
         </div>
 

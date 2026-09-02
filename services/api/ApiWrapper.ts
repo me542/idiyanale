@@ -52,7 +52,7 @@ export const ApiWrapper = {
   },
 
   // Chat
-  createConversation(title: string, userIds: number[]) {
+  createConversation(title: string, userIds: number[], groupType: string, institutionId: number | undefined) {
     return post(ApiEndpoint.POST_CREATE_CONVERSATION, { title, user_ids: userIds });
   },
 

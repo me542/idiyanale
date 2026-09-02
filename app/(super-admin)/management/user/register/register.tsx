@@ -63,6 +63,7 @@ export default function AddUserModal({
 
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(initialForm);
       setErrors({});
       setError("");
@@ -146,6 +147,7 @@ export default function AddUserModal({
 
   useEffect(() => {
     if (!open || !form.institution) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPositions([]);
       return;
     }
